@@ -1,0 +1,275 @@
+#!/usr/bin/env bash
+# Developer entry point for local-backup.
+# Usage: ./run <command> [args...]
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+cd "$ROOT"
+
+BIN_DIR="$ROOT/bin"
+BIN="$BIN_DIR/local-backup"
+TOOLS_DIR="$ROOT/.tools"
+RESTIC="$TOOLS_DIR/restic"
+HOME_DIR="${LOCAL_BACKUP_HOME:-$ROOT/var}"
+RESTIC_VERSION="${LOCAL_BACKUP_RESTIC_VERSION:-0.19.0}"
+INSTALL_DIR="${LOCAL_BACKUP_INSTALL_DIR:-$HOME/.local/bin}"
+
+usage() {
+	cat <<'EOF'
+Usage: ./run <command> [args...]
+
+Setup and build
+  setup                 Create var/, download restic if needed, build the binary
+  deps                  Download restic into .tools/ (force with --force)
+  build                 Build bin/local-backup
+  clean                 Remove bin/ and Go test cache for this module
+
+Quality
+  test [go test args]   Run go test ./... (default: all packages)
+  check                 gofmt check, go vet, then tests
+  fmt                   Run gofmt -w on the module
+
+Run the app
+  serve [args]          Build if needed, then serve the localhost UI
+  mcp [args]            Build if needed, then speak MCP on stdio
+  agent                 Build if needed, then print the command catalog
+  run <cmd> [args]      Build if needed, then run any CLI command
+  -- <cmd> [args]       Same as run
+
+Install / deploy
+  deploy [dir]          Build, ensure restic, install binary to dir
+                        (default: $LOCAL_BACKUP_INSTALL_DIR or ~/.local/bin)
+  install [dir]         Alias for deploy
+  mcp-config            Print a Cursor mcpServers snippet for this checkout
+
+Environment
+  LOCAL_BACKUP_HOME              Data directory (default: ./var)
+  LOCAL_BACKUP_RESTIC            Restic binary override
+  LOCAL_BACKUP_RESTIC_VERSION    Version fetched by deps (default: 0.19.0)
+  LOCAL_BACKUP_INSTALL_DIR       Default deploy target (default: ~/.local/bin)
+EOF
+}
+
+log() {
+	printf '==> %s\n' "$*" >&2
+}
+
+die() {
+	printf 'error: %s\n' "$*" >&2
+	exit 1
+}
+
+need_cmd() {
+	command -v "$1" >/dev/null 2>&1 || die "$1 is required"
+}
+
+ensure_dirs() {
+	mkdir -p "$BIN_DIR" "$TOOLS_DIR" "$HOME_DIR"
+	chmod 700 "$HOME_DIR" 2>/dev/null || true
+}
+
+restic_platform() {
+	local os arch
+	os="$(uname -s | tr '[:upper:]' '[:lower:]')"
+	arch="$(uname -m)"
+	case "$arch" in
+	x86_64 | amd64) arch="amd64" ;;
+	aarch64 | arm64) arch="arm64" ;;
+	armv7l | armv6l) arch="arm" ;;
+	*) die "unsupported architecture: $arch" ;;
+	esac
+	case "$os" in
+	linux | darwin) ;;
+	*) die "unsupported OS: $os" ;;
+	esac
+	printf '%s_%s\n' "$os" "$arch"
+}
+
+ensure_restic() {
+	local force="${1:-}"
+	ensure_dirs
+	if [[ -x "$RESTIC" && "$force" != "--force" ]]; then
+		export LOCAL_BACKUP_RESTIC="$RESTIC"
+		return
+	fi
+	need_cmd curl
+	local platform name url tmp
+	platform="$(restic_platform)"
+	name="restic_${RESTIC_VERSION}_${platform}"
+	url="https://github.com/restic/restic/releases/download/v${RESTIC_VERSION}/${name}.bz2"
+	tmp="$(mktemp -d)"
+	# shellcheck disable=SC2064
+	trap "rm -rf '$tmp'" RETURN
+	log "Downloading restic ${RESTIC_VERSION} (${platform})"
+	curl -fsSL "$url" -o "$tmp/restic.bz2"
+	if command -v bunzip2 >/dev/null 2>&1; then
+		bunzip2 -c "$tmp/restic.bz2" >"$tmp/restic"
+	elif command -v bzip2 >/dev/null 2>&1; then
+		bzip2 -dc "$tmp/restic.bz2" >"$tmp/restic"
+	else
+		die "bunzip2 or bzip2 is required to unpack restic"
+	fi
+	chmod 755 "$tmp/restic"
+	mv "$tmp/restic" "$RESTIC"
+	export LOCAL_BACKUP_RESTIC="$RESTIC"
+	"$RESTIC" version >&2
+}
+
+sources_newer_than_bin() {
+	[[ ! -x "$BIN" ]] && return 0
+	local path
+	while IFS= read -r -d '' path; do
+		return 0
+	done < <(find "$ROOT/cmd" "$ROOT/internal" "$ROOT/go.mod" "$ROOT/go.sum" \
+		-type f \( -name '*.go' -o -name 'go.mod' -o -name 'go.sum' -o -name '*.json' \) \
+		-newer "$BIN" -print0 2>/dev/null)
+	return 1
+}
+
+ensure_binary() {
+	ensure_dirs
+	ensure_restic
+	if sources_newer_than_bin; then
+		build
+	fi
+}
+
+build() {
+	need_cmd go
+	ensure_dirs
+	ensure_restic
+	log "Building $BIN"
+	go build -o "$BIN" ./cmd/local-backup
+}
+
+cmd_setup() {
+	need_cmd go
+	ensure_dirs
+	ensure_restic
+	build
+	log "Ready. Data: $HOME_DIR"
+	log "Binary: $BIN"
+	log "Restic: $RESTIC"
+	log "UI: ./run serve"
+	log "MCP: ./run mcp-config"
+}
+
+cmd_deps() {
+	ensure_restic "${1:-}"
+}
+
+cmd_test() {
+	need_cmd go
+	ensure_restic
+	export LOCAL_BACKUP_RESTIC="$RESTIC"
+	if [[ $# -eq 0 ]]; then
+		log "Running go test ./..."
+		go test ./...
+	else
+		log "Running go test $*"
+		go test "$@"
+	fi
+}
+
+cmd_fmt() {
+	need_cmd go
+	find "$ROOT/cmd" "$ROOT/internal" -name '*.go' -print0 | xargs -0 gofmt -w
+}
+
+cmd_check() {
+	need_cmd go
+	ensure_restic
+	export LOCAL_BACKUP_RESTIC="$RESTIC"
+	log "Checking gofmt"
+	local dirty
+	dirty="$(gofmt -l cmd internal)"
+	if [[ -n "$dirty" ]]; then
+		printf '%s\n' "$dirty" >&2
+		die "gofmt would change the files above; run ./run fmt"
+	fi
+	log "Running go vet ./..."
+	go vet ./...
+	cmd_test
+}
+
+cmd_clean() {
+	log "Removing $BIN_DIR"
+	rm -rf "$BIN_DIR"
+	if command -v go >/dev/null 2>&1; then
+		log "Clearing Go test cache for this module"
+		go clean -testcache
+	fi
+}
+
+cmd_deploy() {
+	local dest="${1:-$INSTALL_DIR}"
+	need_cmd go
+	build
+	mkdir -p "$dest"
+	local target="$dest/local-backup"
+	log "Installing $BIN -> $target"
+	install -m 755 "$BIN" "$target"
+	if [[ -x "$RESTIC" ]]; then
+		log "Restic stays at $RESTIC (set LOCAL_BACKUP_RESTIC if the installed binary cannot find it)"
+	fi
+	cat >&2 <<EOF
+Installed.
+  binary: $target
+  home:   export LOCAL_BACKUP_HOME=$HOME_DIR
+  restic: export LOCAL_BACKUP_RESTIC=$RESTIC
+  ui:     $target --home $HOME_DIR serve
+  mcp:    $target --home $HOME_DIR mcp
+EOF
+}
+
+cmd_mcp_config() {
+	ensure_binary
+	cat <<EOF
+{
+  "mcpServers": {
+    "local-backup": {
+      "command": "$BIN",
+      "args": ["--home", "$HOME_DIR", "mcp"]
+    }
+  }
+}
+EOF
+}
+
+run_app() {
+	ensure_binary
+	export LOCAL_BACKUP_RESTIC="${LOCAL_BACKUP_RESTIC:-$RESTIC}"
+	exec "$BIN" --home "$HOME_DIR" "$@"
+}
+
+main() {
+	if [[ $# -eq 0 ]]; then
+		usage
+		exit 2
+	fi
+	local cmd="$1"
+	shift
+	case "$cmd" in
+	-h | --help | help) usage ;;
+	setup) cmd_setup ;;
+	deps | restic) cmd_deps "$@" ;;
+	build) build ;;
+	test) cmd_test "$@" ;;
+	check) cmd_check ;;
+	fmt) cmd_fmt ;;
+	clean) cmd_clean ;;
+	deploy | install) cmd_deploy "$@" ;;
+	mcp-config) cmd_mcp_config ;;
+	serve) run_app serve "$@" ;;
+	mcp) run_app mcp "$@" ;;
+	agent) run_app agent "$@" ;;
+	run) run_app "$@" ;;
+	--) run_app "$@" ;;
+	*)
+		# Unknown verb: treat as a local-backup CLI command.
+		run_app "$cmd" "$@"
+		;;
+	esac
+}
+
+main "$@"

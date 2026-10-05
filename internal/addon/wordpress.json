@@ -1,0 +1,77 @@
+{
+  "id": "wordpress",
+  "note": "WordPress is an addon. The backup contract is files plus a database dump.",
+  "ambiguous": "That folder contains more than one WordPress tree. Pass the site root you want to back up.",
+  "detect": {
+    "files": ["wp-config.php", "wp-includes/version.php"],
+    "depth": 3,
+    "skip": ["node_modules", "cache", ".cache", "bower_components", "__pycache__", ".git", "wp-admin", "wp-includes"]
+  },
+  "excludes": ["node_modules", "cache", "wp-content/upgrade", "wp-content/debug.log", ".git"],
+  "database": {
+    "engine": "mysql",
+    "method": "auto",
+    "auto": ["wp_cli", "mysqldump"],
+    "default_port": 3306,
+    "prefix_default": "wp_",
+    "sql_file_if": {"name": "fixture", "file": "database.sql"},
+    "config": {
+      "file": "wp-config.php",
+      "format": "php_define",
+      "name": "DB_NAME",
+      "user": "DB_USER",
+      "host": "DB_HOST",
+      "password": "DB_PASSWORD",
+      "prefix": "table_prefix",
+      "password_source": "wp-config",
+      "unreadable": "wp-config.php could not be read.",
+      "missing_password": "wp-config.php does not define DB_PASSWORD."
+    }
+  },
+  "versions": {
+    "app": {
+      "field": "wordpress",
+      "file": "wp-includes/version.php",
+      "pattern": "\\$wp_version\\s*=\\s*['\"]([^'\"]+)['\"]"
+    },
+    "components": [
+      {
+        "field": "plugins",
+        "dir": "wp-content/plugins",
+        "header": "Plugin Name",
+        "entry": "{name}.php"
+      },
+      {
+        "field": "themes",
+        "dir": "wp-content/themes",
+        "header": "Theme Name",
+        "entry": "style.css",
+        "dirs_only": true
+      }
+    ]
+  },
+  "dumps": {
+    "wp_cli": {
+      "engine": "argv",
+      "argv": ["{php}", "{wp}", "db", "export", "{output}", "--path={root}", "--add-drop-table", "--skip-plugins", "--skip-themes"],
+      "remote_argv": ["wp", "db", "export", "{output}", "--path={root}", "--add-drop-table", "--skip-plugins", "--skip-themes"],
+      "timeout_sec": 180,
+      "skip_if_unreachable": true,
+      "report": "wp_db_export",
+      "fail_message": "wp db export failed.",
+      "hint": "PHP could not export the database. mysqldump is the next attempt when the method is auto.",
+      "missing": {
+        "{php}": {"message": "PHP is not available for wp-cli.", "hint": "Install PHP or set LOCAL_BACKUP_PHP."},
+        "{wp}": {"message": "wp-cli is not installed.", "hint": "Install wp-cli or use mysqldump."}
+      }
+    },
+    "mysqldump": {
+      "engine": "mysqldump",
+      "timeout_sec": 600,
+      "fail_message": "mysqldump failed.",
+      "hint": "MySQL is not accepting connections, or the account in wp-config.php cannot read the database.",
+      "missing_message": "mysqldump is not installed.",
+      "missing_hint": "Install the MySQL or MariaDB client."
+    }
+  }
+}
