@@ -69,7 +69,7 @@ func TestSetDatabaseToggleAndPassword(t *testing.T) {
 		t.Fatal(err)
 	}
 	db = model.DatabaseSource(cleared)
-	if db == nil || db.PasswordSource == "saved" {
+	if db == nil || db.PasswordSource != "wp-config" {
 		t.Fatalf("%#v", db)
 	}
 	if _, err := os.Stat(application.databaseSecretPath("fixture-wordpress")); !os.IsNotExist(err) {

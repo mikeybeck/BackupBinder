@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"slices"
+	"strings"
 	"time"
 
 	"local-backup/internal/discover"
@@ -340,6 +341,25 @@ func (a *App) Explain(siteID, runID string) (ExplainResult, error) {
 		return ExplainResult{}, err
 	}
 	if run.OK {
+		if run.Manifest != nil {
+			var failed []string
+			for _, dest := range run.Manifest.Destinations {
+				if dest.Status == "failed" || dest.Status == "skipped" {
+					text := dest.Kind + " destination"
+					if dest.ID != "" {
+						text += " " + dest.ID
+					}
+					text += " " + dest.Status
+					if dest.Reason != "" {
+						text += ": " + dest.Reason
+					}
+					failed = append(failed, text)
+				}
+			}
+			if len(failed) > 0 {
+				return ExplainResult{OK: true, SiteID: siteID, RunID: run.RunID, Message: "That run stored a local snapshot, but a destination did not. " + strings.Join(failed, " ")}, nil
+			}
+		}
 		return ExplainResult{OK: true, SiteID: siteID, RunID: run.RunID, Message: "That run succeeded."}, nil
 	}
 	if run.InProgress() {
@@ -359,6 +379,9 @@ func (a *App) SetSchedule(siteID, cron string, enabled bool) (model.Schedule, er
 		}
 	}
 	if err := a.DB.SaveSchedule(site.ID, cron, enabled, site.Schedule.LastSlot); err != nil {
+		return model.Schedule{}, err
+	}
+	if err := a.saveSiteFile(site.ID); err != nil {
 		return model.Schedule{}, err
 	}
 	return model.Schedule{Cron: cron, Enabled: enabled, LastSlot: site.Schedule.LastSlot}, nil

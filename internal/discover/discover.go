@@ -1,5 +1,6 @@
 // Package discover reads a directory and proposes a backup contract.
-// Site types come from addons. The database password stays in the addon's config file.
+// Site types come from addons. Database passwords are read from the config file
+// the addon names, or from a saved secret — never stored on the site contract.
 package discover
 
 import (

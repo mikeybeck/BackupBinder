@@ -11,8 +11,8 @@ import (
 	"strings"
 	"time"
 
-	"local-backup/internal/archive"
 	"local-backup/internal/capture"
+	"local-backup/internal/destination"
 	"local-backup/internal/discover"
 	"local-backup/internal/fail"
 	"local-backup/internal/model"
@@ -20,10 +20,9 @@ import (
 )
 
 var (
-	hostPattern   = regexp.MustCompile(`^[A-Za-z0-9._-]+$`)
-	userPattern   = regexp.MustCompile(`^[A-Za-z0-9._-]+$`)
-	remotePath    = regexp.MustCompile(`^/[A-Za-z0-9._@/=+-]*$`)
-	bucketPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{1,62}$`)
+	hostPattern = regexp.MustCompile(`^[A-Za-z0-9._-]+$`)
+	userPattern = regexp.MustCompile(`^[A-Za-z0-9._-]+$`)
+	remotePath  = regexp.MustCompile(`^/[A-Za-z0-9._@/=+-]*$`)
 )
 
 // Register saves a discovered contract. The database password is not part of it.
@@ -54,6 +53,9 @@ func (a *App) Register(path, name, id string, idExplicit bool) (discover.Result,
 	if err := a.DB.CreateSite(result.Site); err != nil {
 		return result, err
 	}
+	if err := a.saveSiteFile(result.Site.ID); err != nil {
+		return result, err
+	}
 	result.Saved = true
 	return result, nil
 }
@@ -66,6 +68,9 @@ func (a *App) CreateBackup(siteID string) (model.Manifest, error) {
 	}
 	if _, err := os.Stat(site.Root); err != nil {
 		return model.Manifest{}, fail.New("missing_path", "The site root is missing: "+site.Root)
+	}
+	if err := a.checkEnabledDestinations(site); err != nil {
+		return model.Manifest{}, err
 	}
 	runID, err := a.newRunID(site.ID)
 	if err != nil {
@@ -93,6 +98,16 @@ func (a *App) CreateBackup(siteID string) (model.Manifest, error) {
 			return model.Manifest{}, a.failRun(site.ID, runID, started, err, nil)
 		}
 	}
+	excludes := fileExcludes(site)
+	note.set(model.Progress{Phase: "Estimating size"}, true)
+	estimate, err := capture.EstimateFiles(site.Root, excludes)
+	if err != nil {
+		return model.Manifest{}, a.failRun(site.ID, runID, started, fail.Wrap("step_failed", "could not estimate backup size", err), nil)
+	}
+	note.set(model.Progress{
+		Phase: "Estimating size", FilesTotal: int64(estimate.FileCount), BytesTotal: estimate.ByteSize,
+	}, true)
+
 	staging := filepath.Join(a.Home, "staging", site.ID, runID)
 	payload := filepath.Join(staging, "payload")
 	defer os.RemoveAll(staging)
@@ -112,9 +127,14 @@ func (a *App) CreateBackup(siteID string) (model.Manifest, error) {
 		}
 		db = &report
 	}
-	note.set(model.Progress{Phase: "Reading site files"}, true)
-	files, err := capture.StageFiles(site.Root, filepath.Join(payload, "files"), fileExcludes(site), func(rel string, n int) {
-		note.set(model.Progress{Phase: "Reading site files", File: rel, FilesDone: int64(n)}, false)
+	note.set(model.Progress{
+		Phase: "Reading site files", FilesTotal: int64(estimate.FileCount), BytesTotal: estimate.ByteSize,
+	}, true)
+	files, err := capture.StageFiles(site.Root, filepath.Join(payload, "files"), excludes, func(rel string, n int) {
+		note.set(model.Progress{
+			Phase: "Reading site files", File: rel, FilesDone: int64(n),
+			FilesTotal: int64(estimate.FileCount), BytesTotal: estimate.ByteSize,
+		}, false)
 	})
 	if err != nil {
 		return model.Manifest{}, a.failRun(site.ID, runID, started, fail.Wrap("step_failed", "could not read site files", err), secrets)
@@ -236,38 +256,46 @@ func (a *App) publish(site model.Site, repo, password, snapshotID string, note *
 			results = append(results, model.DestResult{ID: dest.ID, Kind: dest.Kind, Status: "stored", Written: true, Path: path, SnapshotID: snapshotID})
 			continue
 		}
-		offsite := dest.Kind == "sftp" || dest.Kind == "s3" || dest.Kind == "b2"
+		kind, kindErr := destination.ByID(dest.Kind)
+		offsite := kindErr == nil && kind.Offsite
 		if !dest.Enabled {
 			results = append(results, model.DestResult{ID: dest.ID, Kind: dest.Kind, Status: "disabled", Offsite: offsite, Reason: "Saved only. Nothing is uploaded until this destination is enabled."})
 			continue
 		}
-		if missing := missingFields(dest); len(missing) > 0 {
+		if kindErr != nil {
+			results = append(results, model.DestResult{ID: dest.ID, Kind: dest.Kind, Status: "failed", Reason: kindErr.Error()})
+			warnings = append(warnings, kindErr.Error())
+			continue
+		}
+		if missing := kind.Missing(dest); len(missing) > 0 {
 			results = append(results, model.DestResult{ID: dest.ID, Kind: dest.Kind, Status: "skipped", Offsite: offsite, Reason: "missing " + strings.Join(missing, ", ")})
 			continue
 		}
-		if needsCredentials(dest) && !credentialPresent(dest.CredentialFile) {
+		if kind.NeedsCredentials() && !credentialPresent(dest.CredentialFile) {
 			results = append(results, model.DestResult{ID: dest.ID, Kind: dest.Kind, Status: "skipped", Offsite: offsite, Reason: "credentials file is missing"})
 			continue
 		}
-		target, err := archive.DestinationURL(dest)
+		target, err := kind.URL(dest)
 		if err != nil {
 			results = append(results, model.DestResult{ID: dest.ID, Kind: dest.Kind, Status: "failed", Offsite: offsite, Reason: err.Error()})
 			warnings = append(warnings, err.Error())
 			continue
 		}
-		if dest.Kind == "disk" {
-			if err := os.MkdirAll(dest.Path, 0o700); err != nil {
-				results = append(results, model.DestResult{ID: dest.ID, Kind: dest.Kind, Status: "failed", Reason: err.Error()})
-				warnings = append(warnings, err.Error())
-				continue
-			}
+		if err := kind.BeforeCopy(dest); err != nil {
+			results = append(results, model.DestResult{ID: dest.ID, Kind: dest.Kind, Status: "failed", Offsite: offsite, Reason: err.Error()})
+			warnings = append(warnings, err.Error())
+			continue
 		}
 		env := loadEnvFile(dest.CredentialFile)
 		if note != nil {
-			note.set(model.Progress{Phase: destProgressLabel(dest)}, true)
+			note.set(model.Progress{Phase: kind.ProgressLabel(dest)}, true)
 		}
-		if err := a.resticFor(site).Copy(repo, password, target, snapshotID, env); err != nil {
-			message := err.Error()
+		var globalOpts []string
+		if rclone, err := kind.RcloneProgram(); err == nil && rclone != "" {
+			globalOpts = append(globalOpts, "-o", "rclone.program="+rclone)
+		}
+		if err := a.resticFor(site).Copy(repo, password, target, snapshotID, env, globalOpts...); err != nil {
+			message := formatDestFailure(err)
 			results = append(results, model.DestResult{ID: dest.ID, Kind: dest.Kind, Status: "failed", Offsite: offsite, URL: target, Reason: message})
 			warnings = append(warnings, message)
 			continue
@@ -280,46 +308,32 @@ func (a *App) publish(site model.Site, repo, password, snapshotID string, note *
 	return results, warnings
 }
 
-func destProgressLabel(dest model.Destination) string {
-	switch dest.Kind {
-	case "sftp":
-		return "Copying to " + dest.User + "@" + dest.Host
-	case "s3", "b2":
-		return "Copying to " + dest.Bucket
-	case "disk":
-		return "Copying to " + dest.Path
-	default:
-		return "Copying to " + dest.Kind
+func formatDestFailure(err error) string {
+	fe, ok := err.(*fail.Error)
+	if !ok || fe == nil {
+		return err.Error()
 	}
+	text := fe.Message
+	if fe.Hint != "" {
+		text += " " + fe.Hint
+	}
+	return text
 }
 
 func missingFields(dest model.Destination) []string {
-	var missing []string
-	switch dest.Kind {
-	case "sftp":
-		if dest.Host == "" {
-			missing = append(missing, "host")
-		}
-		if dest.User == "" {
-			missing = append(missing, "user")
-		}
-		if dest.Path == "" {
-			missing = append(missing, "path")
-		}
-	case "s3", "b2":
-		if dest.Bucket == "" {
-			missing = append(missing, "bucket")
-		}
-	case "disk":
-		if dest.Path == "" {
-			missing = append(missing, "path")
-		}
+	kind, err := destination.ByID(dest.Kind)
+	if err != nil {
+		return []string{"kind"}
 	}
-	return missing
+	return kind.Missing(dest)
 }
 
 func needsCredentials(dest model.Destination) bool {
-	return dest.Kind == "s3" || dest.Kind == "b2"
+	kind, err := destination.ByID(dest.Kind)
+	if err != nil {
+		return false
+	}
+	return kind.NeedsCredentials()
 }
 
 func credentialPresent(path string) bool {
@@ -349,22 +363,28 @@ func loadEnvFile(path string) []string {
 	return env
 }
 
-// AddDestination stores a second copy setting. Disabled destinations are not contacted.
+// AddDestination stores a second copy setting. Disabled destinations are not contacted
+// at save time, but rclone remote names are checked against local rclone config whenever
+// host is set. Enabled destinations are probed for reachability when saved.
 func (a *App) AddDestination(siteID string, dest model.Destination, accessKey, secretKey string) (model.Destination, error) {
 	site, err := a.DB.GetSite(siteID)
 	if err != nil {
 		return dest, err
 	}
-	if dest.Kind != "sftp" && dest.Kind != "s3" && dest.Kind != "b2" && dest.Kind != "disk" {
-		return dest, fail.New("bad_destination", "Destination kind must be sftp, s3, b2, or disk.")
+	kind, err := destination.ByID(dest.Kind)
+	if err != nil {
+		return dest, err
 	}
-	if err := validateDestination(site, a.repoPath(site), dest); err != nil {
+	if err := kind.Validate(site, a.repoPath(site), dest); err != nil {
+		return dest, err
+	}
+	if err := kind.CheckAccess(dest, dest.Enabled); err != nil {
 		return dest, err
 	}
 	dest.ID = nextDestID(site, dest.Kind)
 	dest.Credentials = ""
 	if accessKey != "" || secretKey != "" {
-		body, err := credentialBody(dest.Kind, accessKey, secretKey)
+		body, err := kind.CredentialBody(accessKey, secretKey)
 		if err != nil {
 			return dest, err
 		}
@@ -377,53 +397,103 @@ func (a *App) AddDestination(siteID string, dest model.Destination, accessKey, s
 	if err := a.DB.AddDestination(site.ID, dest); err != nil {
 		return dest, err
 	}
+	if err := a.saveSiteFile(site.ID); err != nil {
+		return dest, err
+	}
 	dest.Credentials = credentialLabel(dest.CredentialFile)
 	return dest, nil
 }
 
-func credentialBody(kind, access, secret string) (string, error) {
-	if strings.ContainsAny(access, "\n") || strings.ContainsAny(secret, "\n") {
-		return "", fail.New("bad_destination", "Credentials cannot contain newlines.")
+// SetDestinationEnabled turns upload on or off for one saved destination.
+// Enabling re-checks access. The local restic repository cannot be disabled.
+func (a *App) SetDestinationEnabled(siteID, destID string, enabled bool) (model.Destination, error) {
+	site, err := a.DB.GetSite(siteID)
+	if err != nil {
+		return model.Destination{}, err
 	}
-	switch kind {
-	case "s3":
-		return "AWS_ACCESS_KEY_ID=" + access + "\nAWS_SECRET_ACCESS_KEY=" + secret + "\n", nil
-	case "b2":
-		return "B2_ACCOUNT_ID=" + access + "\nB2_ACCOUNT_KEY=" + secret + "\n", nil
-	default:
-		return "", fail.New("bad_destination", "This destination does not take a secret in the form. SFTP uses the SSH keys already on this machine.")
+	dest, err := findDestination(site, destID)
+	if err != nil {
+		return model.Destination{}, err
 	}
+	if dest.Kind == "local_restic" {
+		return model.Destination{}, fail.New("bad_destination", "The local restic repository stays enabled.")
+	}
+	if enabled {
+		kind, err := destination.ByID(dest.Kind)
+		if err != nil {
+			return model.Destination{}, err
+		}
+		if err := kind.Validate(site, a.repoPath(site), dest); err != nil {
+			return model.Destination{}, err
+		}
+		if err := kind.CheckAccess(dest, true); err != nil {
+			return model.Destination{}, err
+		}
+	}
+	dest.Enabled = enabled
+	if err := a.DB.UpdateDestination(site.ID, dest); err != nil {
+		return model.Destination{}, err
+	}
+	if err := a.saveSiteFile(site.ID); err != nil {
+		return model.Destination{}, err
+	}
+	dest.Credentials = credentialLabel(dest.CredentialFile)
+	return dest, nil
 }
 
-func validateDestination(site model.Site, repo string, dest model.Destination) error {
-	switch dest.Kind {
-	case "sftp":
-		if dest.Host != "" && !hostPattern.MatchString(dest.Host) {
-			return fail.New("bad_destination", "SFTP host must be a hostname, not a shell command.")
+// RemoveDestination deletes a saved destination. The local restic repository cannot be removed.
+func (a *App) RemoveDestination(siteID, destID string) error {
+	site, err := a.DB.GetSite(siteID)
+	if err != nil {
+		return err
+	}
+	dest, err := findDestination(site, destID)
+	if err != nil {
+		return err
+	}
+	if dest.Kind == "local_restic" {
+		return fail.New("bad_destination", "The local restic repository cannot be removed.")
+	}
+	if err := a.DB.RemoveDestination(site.ID, destID); err != nil {
+		return err
+	}
+	if dest.CredentialFile != "" {
+		_ = os.Remove(dest.CredentialFile)
+	}
+	return a.saveSiteFile(site.ID)
+}
+
+func findDestination(site model.Site, destID string) (model.Destination, error) {
+	for _, dest := range site.Destinations {
+		if dest.ID == destID {
+			return dest, nil
 		}
-		if dest.User != "" && !userPattern.MatchString(dest.User) {
-			return fail.New("bad_destination", "SFTP user must be a plain username.")
+	}
+	return model.Destination{}, fail.New("bad_destination", "Destination "+destID+" was not found on this site.")
+}
+
+// checkEnabledDestinations probes every enabled destination before a backup run starts.
+func (a *App) checkEnabledDestinations(site model.Site) error {
+	repo := a.repoPath(site)
+	for _, dest := range site.Destinations {
+		if !dest.Enabled || dest.Kind == "local_restic" {
+			continue
 		}
-		if dest.Path != "" && !remotePath.MatchString(dest.Path) {
-			return fail.New("bad_destination", "SFTP path must be an absolute path without spaces.")
+		kind, err := destination.ByID(dest.Kind)
+		if err != nil {
+			return err
 		}
-	case "s3", "b2":
-		if dest.Bucket != "" && !bucketPattern.MatchString(dest.Bucket) {
-			return fail.New("bad_destination", "Bucket name contains characters this tool will not send.")
+		if err := kind.Validate(site, repo, dest); err != nil {
+			return err
 		}
-		endpoint := strings.Trim(strings.TrimPrefix(strings.TrimPrefix(dest.Endpoint, "https://"), "http://"), "/")
-		if dest.Endpoint != "" && !hostPattern.MatchString(endpoint) {
-			return fail.New("bad_destination", "S3 endpoint must be a hostname.")
+		if missing := kind.Missing(dest); len(missing) > 0 {
+			continue
 		}
-	case "disk":
-		if dest.Path == "" {
-			return nil
+		if kind.NeedsCredentials() && dest.CredentialFile == "" {
+			continue
 		}
-		if !filepath.IsAbs(dest.Path) {
-			return fail.New("bad_destination", "A disk destination must be an absolute path.")
-		}
-		if related(dest.Path, site.Root) || related(dest.Path, repo) {
-			return fail.New("bad_destination", "The disk destination cannot be the live site or the primary restic repository.")
+		if err := kind.CheckAccess(dest, true); err != nil {
+			return err
 		}
 	}
 	return nil

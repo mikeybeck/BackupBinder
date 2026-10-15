@@ -58,6 +58,9 @@ func (a *App) SetLocation(siteID string, loc model.Location) (model.Site, error)
 	if err := a.DB.SaveLocation(site.ID, site.Root, site.Location); err != nil {
 		return model.Site{}, err
 	}
+	if err := a.saveSiteFile(site.ID); err != nil {
+		return model.Site{}, err
+	}
 	return a.DB.GetSite(site.ID)
 }
 

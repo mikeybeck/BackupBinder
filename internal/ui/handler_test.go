@@ -1,7 +1,6 @@
 package ui
 
 import (
-	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -11,6 +10,7 @@ import (
 	"testing"
 
 	"local-backup/internal/app"
+	"local-backup/internal/model"
 )
 
 func TestHandlersSaveSiteSettings(t *testing.T) {
@@ -34,9 +34,8 @@ func TestHandlersSaveSiteSettings(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "note.txt"), []byte("x"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	registered := postForm(t, handler, "/register", url.Values{"name": {"Client Site"}, "path": {dir}})
-	if registered.Code != http.StatusSeeOther || registered.Header().Get("Location") != "/sites/client-site" {
-		t.Fatalf("register %d %s", registered.Code, registered.Header().Get("Location"))
+	if _, err := application.Register(dir, "Client Site", "", false); err != nil {
+		t.Fatal(err)
 	}
 
 	page := get(t, handler, "/sites/client-site")
@@ -115,6 +114,145 @@ func TestHandlersSaveSiteSettings(t *testing.T) {
 	}
 }
 
+func TestDestinationRemoveAndDisable(t *testing.T) {
+	fake := t.TempDir()
+	script := filepath.Join(fake, "rclone")
+	body := "#!/bin/sh\ncase \"$1\" in\nlistremotes) echo 'gdrive:'; exit 0 ;;\nabout) exit 0 ;;\n*) exit 1 ;;\nesac\n"
+	if err := os.WriteFile(script, []byte(body), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("LOCAL_BACKUP_RCLONE", script)
+
+	application, err := app.Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { application.Close() })
+	handler := Handler(application)
+
+	siteDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(siteDir, "note.txt"), []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := application.Register(siteDir, "Notes", "notes", true); err != nil {
+		t.Fatal(err)
+	}
+	dest, err := application.AddDestination("notes", model.Destination{
+		Kind: "gdrive", Host: "gdrive", Path: "local-backup/notes", Enabled: true,
+	}, "", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	page := get(t, handler, "/sites/notes").Body.String()
+	if !strings.Contains(page, "/destinations/"+dest.ID+"/enabled") || !strings.Contains(page, "/destinations/"+dest.ID+"/remove") {
+		t.Fatal("manage controls missing")
+	}
+	if strings.Contains(page, "/destinations/local/remove") {
+		t.Fatal("local restic should not be removable")
+	}
+
+	disabled := postForm(t, handler, "/sites/notes/destinations/"+dest.ID+"/enabled", url.Values{})
+	if disabled.Code != http.StatusSeeOther || !strings.Contains(disabled.Header().Get("Location"), "saved+only") {
+		t.Fatal(disabled.Header().Get("Location"))
+	}
+	removed := postForm(t, handler, "/sites/notes/destinations/"+dest.ID+"/remove", url.Values{})
+	if removed.Code != http.StatusSeeOther || !strings.Contains(removed.Header().Get("Location"), "removed") {
+		t.Fatal(removed.Header().Get("Location"))
+	}
+	after := get(t, handler, "/sites/notes").Body.String()
+	if strings.Contains(after, dest.ID) {
+		t.Fatal("destination still listed")
+	}
+}
+
+func TestDestinationSaveKeepsFieldsOnError(t *testing.T) {
+	dir := t.TempDir()
+	script := filepath.Join(dir, "rclone")
+	body := "#!/bin/sh\nif [ \"$1\" = listremotes ]; then echo 'other:'; exit 0; fi\necho unexpected \"$1\" >&2; exit 1\n"
+	if err := os.WriteFile(script, []byte(body), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("LOCAL_BACKUP_RCLONE", script)
+
+	application, err := app.Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { application.Close() })
+	handler := Handler(application)
+
+	siteDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(siteDir, "note.txt"), []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := application.Register(siteDir, "Notes", "notes", true); err != nil {
+		t.Fatal(err)
+	}
+
+	resp := postForm(t, handler, "/sites/notes/destinations", url.Values{
+		"kind": {"gdrive"}, "host": {"gdrive"}, "path": {"local-backup/notes"}, "enabled": {"on"},
+	})
+	if resp.Code != http.StatusOK {
+		t.Fatalf("expected re-render %d location %s", resp.Code, resp.Header().Get("Location"))
+	}
+	page := resp.Body.String()
+	if !strings.Contains(page, "Destination was not saved") || !strings.Contains(page, "not configured") {
+		t.Fatal(page)
+	}
+	if strings.Contains(page, "local snapshot is already stored") {
+		t.Fatal(page)
+	}
+	if !strings.Contains(page, `id="dest-gdrive-host" name="host" value="gdrive"`) {
+		t.Fatal("host field was cleared")
+	}
+	if !strings.Contains(page, `id="dest-gdrive-path" name="path" value="local-backup/notes"`) {
+		t.Fatal("path field was cleared")
+	}
+	if !strings.Contains(page, `value="gdrive" selected`) {
+		t.Fatal("gdrive kind was not kept selected")
+	}
+	if !strings.Contains(page, `name="enabled" checked`) {
+		t.Fatal("enabled checkbox was cleared")
+	}
+	if !strings.Contains(page, `id="destinations"`) || !strings.Contains(page, `getElementById("destinations")`) {
+		t.Fatal("focus target missing")
+	}
+}
+
+func TestWizardLocationHasEveryField(t *testing.T) {
+	application, err := app.Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { application.Close() })
+	handler := Handler(application)
+
+	form := get(t, handler, "/setup")
+	body := form.Body.String()
+	if form.Code != http.StatusOK {
+		t.Fatalf("setup %d", form.Code)
+	}
+	for _, want := range []string{`name="local_path"`, `name="host"`, `name="user"`, `name="remote_path"`, "Set up a backup"} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("location form missing %q", want)
+		}
+	}
+
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "note.txt"), []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	created := postForm(t, handler, "/setup", url.Values{"kind": {"local"}, "local_path": {dir}})
+	if created.Code != http.StatusSeeOther || !strings.HasSuffix(created.Header().Get("Location"), "/setup") {
+		t.Fatalf("create %d %s", created.Code, created.Header().Get("Location"))
+	}
+	namePage := get(t, handler, created.Header().Get("Location"))
+	if namePage.Code != http.StatusOK || !strings.Contains(namePage.Body.String(), `name="name"`) || !strings.Contains(namePage.Body.String(), "Back") {
+		t.Fatalf("name step %d %s", namePage.Code, namePage.Body.String())
+	}
+}
+
 func get(t *testing.T, handler http.Handler, path string) *httptest.ResponseRecorder {
 	t.Helper()
 	req := httptest.NewRequest(http.MethodGet, path, nil)
@@ -129,6 +267,5 @@ func postForm(t *testing.T, handler http.Handler, path string, form url.Values) 
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
-	io.Copy(io.Discard, rec.Body)
 	return rec
 }

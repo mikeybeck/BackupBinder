@@ -1,0 +1,16 @@
+{
+  "id": "gdrive",
+  "label": "Google Drive",
+  "note": "Google Drive uses rclone on this machine. Fields are host (the rclone remote name) and remote-path (folder in Drive). Do not ask for a Google password.",
+  "offsite": true,
+  "fields": [
+    {"name": "host", "label": "rclone remote name", "required": true, "pattern": "hostname", "setup": "host", "placeholder": "gdrive"},
+    {"name": "path", "label": "Folder in Google Drive", "required": true, "pattern": "drive_path", "setup": "remote-path", "placeholder": "local-backup/site"}
+  ],
+  "url": "rclone:{host}:{path_trim}",
+  "url_when_path_empty": "rclone:{host}:/",
+  "require_tools": ["rclone"],
+  "hooks": ["rclone_remote"],
+  "progress": "Copying to Google Drive ({host})",
+  "detail": "{host}:{path_trim}"
+}

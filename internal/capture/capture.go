@@ -21,6 +21,70 @@ import (
 	"local-backup/internal/sqlcheck"
 )
 
+// EstimateFiles walks the site root with the same skip and exclude rules as StageFiles,
+// but only counts files and bytes. It does not hard-link, copy, or hash.
+func EstimateFiles(root string, excludes []string) (model.FileCapture, error) {
+	report := model.FileCapture{Root: root, Excluded: []model.Excluded{}, Inventory: []model.FileRecord{}}
+	err := filepath.WalkDir(root, func(path string, d os.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		rel, err := filepath.Rel(root, path)
+		if err != nil {
+			return err
+		}
+		if rel == "." {
+			return nil
+		}
+		rel = filepath.ToSlash(rel)
+		reason := discover.SkipReason(rel)
+		if reason == "" {
+			reason = discover.ExcludeReason(rel, excludes)
+		}
+		if reason != "" {
+			report.ExcludedCount++
+			if len(report.Excluded) < 50 {
+				item := rel
+				if d.IsDir() {
+					item += "/"
+				}
+				report.Excluded = append(report.Excluded, model.Excluded{Path: item, Reason: reason})
+			}
+			if d.IsDir() {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if d.IsDir() {
+			return nil
+		}
+		if d.Type()&os.ModeSymlink != 0 {
+			report.ExcludedCount++
+			if len(report.Excluded) < 50 {
+				report.Excluded = append(report.Excluded, model.Excluded{Path: rel, Reason: "symlink"})
+			}
+			return nil
+		}
+		info, err := d.Info()
+		if err != nil {
+			return err
+		}
+		if !info.Mode().IsRegular() {
+			return nil
+		}
+		report.Inventory = append(report.Inventory, model.FileRecord{Path: rel, Bytes: info.Size()})
+		return nil
+	})
+	if err != nil {
+		return report, err
+	}
+	report.FileCount = len(report.Inventory)
+	for _, item := range report.Inventory {
+		report.ByteSize += item.Bytes
+	}
+	return report, nil
+}
+
 // StageFiles hard-links (or copies) the files that belong in the archive.
 // onFile, when set, is called with each kept relative path and how many files are kept so far.
 func StageFiles(root, destination string, excludes []string, onFile func(rel string, n int)) (model.FileCapture, error) {

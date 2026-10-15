@@ -3,6 +3,7 @@ package app
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -32,6 +33,20 @@ func TestExplainReportsRunState(t *testing.T) {
 	ok, err := application.Explain("notes", "run-2")
 	if err != nil || ok.Message != "That run succeeded." || ok.Failure != nil {
 		t.Fatalf("%#v %v", ok, err)
+	}
+	destFail := &model.Manifest{
+		OK: true, Snapshot: model.Snapshot{RunID: "run-2b", ResticSnapshotID: "abc"},
+		Destinations: []model.DestResult{{
+			ID: "gdrive-1", Kind: "gdrive", Status: "failed",
+			Reason: "Google Drive / rclone remote 'gdrive' is not configured. Run rclone config.",
+		}},
+	}
+	if err := application.DB.InsertRun("notes", "run-2b", "2026-01-02T12:00:00Z", destFail, nil); err != nil {
+		t.Fatal(err)
+	}
+	partial, err := application.Explain("notes", "run-2b")
+	if err != nil || !strings.Contains(partial.Message, "destination did not") || !strings.Contains(partial.Message, "rclone config") {
+		t.Fatalf("%#v %v", partial, err)
 	}
 	failure := &fail.Error{Code: "step_failed", Message: "disk full", Step: "archive"}
 	if err := application.DB.InsertRun("notes", "run-3", "2026-01-03T00:00:00Z", nil, failure); err != nil {

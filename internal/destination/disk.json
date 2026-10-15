@@ -1,0 +1,13 @@
+{
+  "id": "disk",
+  "label": "Another disk",
+  "note": "Field is remote-path. It cannot be the live site or the restic repository.",
+  "offsite": false,
+  "fields": [
+    {"name": "path", "label": "Disk path", "required": true, "pattern": "abs_path", "setup": "remote-path"}
+  ],
+  "url": "{path}",
+  "hooks": ["disk_safety", "mkdir_before_copy"],
+  "progress": "Copying to {path}",
+  "detail": "{path}"
+}

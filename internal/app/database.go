@@ -37,6 +37,9 @@ func (a *App) SetDatabase(siteID string, in DatabaseInput) (model.Site, error) {
 			return model.Site{}, err
 		}
 		_ = os.Remove(a.databaseSecretPath(site.ID))
+		if err := a.saveSiteFile(site.ID); err != nil {
+			return model.Site{}, err
+		}
 		return a.DB.GetSite(site.ID)
 	}
 
@@ -56,10 +59,13 @@ func (a *App) SetDatabase(siteID string, in DatabaseInput) (model.Site, error) {
 	if db.Name == "" || db.User == "" || db.Host == "" {
 		return model.Site{}, fail.New("bad_database", "A database dump needs a name, user, and host.")
 	}
-	if err := a.applyDatabasePassword(&db, site.ID, in); err != nil {
+	if err := a.applyDatabasePassword(&db, site, in); err != nil {
 		return model.Site{}, err
 	}
 	if err := a.DB.SaveAdapter(site.ID, adapter, withDatabase(site.Sources, db)); err != nil {
+		return model.Site{}, err
+	}
+	if err := a.saveSiteFile(site.ID); err != nil {
 		return model.Site{}, err
 	}
 	return a.DB.GetSite(site.ID)
@@ -90,8 +96,8 @@ func (a *App) databaseSource(site model.Site, in DatabaseInput) (model.Source, s
 	}, site.Adapter, nil
 }
 
-func (a *App) applyDatabasePassword(db *model.Source, siteID string, in DatabaseInput) error {
-	path := a.databaseSecretPath(siteID)
+func (a *App) applyDatabasePassword(db *model.Source, site model.Site, in DatabaseInput) error {
+	path := a.databaseSecretPath(site.ID)
 	password := in.Password
 	if password != "" {
 		if strings.Contains(password, "\n") {
@@ -105,9 +111,11 @@ func (a *App) applyDatabasePassword(db *model.Source, siteID string, in Database
 	}
 	if in.PreferConfig {
 		_ = os.Remove(path)
-		if db.PasswordSource == "saved" || db.PasswordSource == "" {
-			db.PasswordSource = "wp-config"
+		source := ""
+		if matched, err := addon.ByID(site.Adapter); err == nil && matched.Database != nil {
+			source = matched.Database.Config.PasswordSource
 		}
+		db.PasswordSource = source
 		return nil
 	}
 	if credentialPresent(path) {

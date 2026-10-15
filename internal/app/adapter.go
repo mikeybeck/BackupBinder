@@ -39,5 +39,8 @@ func (a *App) SetAdapter(siteID, want string) (model.Site, error) {
 	if err := a.DB.SaveAdapter(site.ID, adapter, sources); err != nil {
 		return model.Site{}, err
 	}
+	if err := a.saveSiteFile(site.ID); err != nil {
+		return model.Site{}, err
+	}
 	return a.DB.GetSite(site.ID)
 }

@@ -18,6 +18,10 @@ type Site struct {
 	Limits            Limits            `json:"limits"`
 	Retention         Retention         `json:"retention"`
 	Location          Location          `json:"location"`
+	// Setup is the decisions still open: location, name, database, destination, schedule, backup.
+	// An empty list means this site is not in the guided walk.
+	Setup     []string `json:"setup,omitempty"`
+	UpdatedAt string   `json:"-"`
 }
 
 // Location is the one place a site's files are read from.

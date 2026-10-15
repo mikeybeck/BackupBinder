@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"local-backup/internal/archive"
+	"local-backup/internal/destination"
 	"local-backup/internal/fail"
 	"local-backup/internal/model"
 	"local-backup/internal/store"
@@ -47,6 +48,9 @@ func (a *App) SetRetention(siteID string, policy model.Retention) (RetentionRepo
 	if err := a.DB.SaveRetention(site.ID, policy); err != nil {
 		return RetentionReport{}, err
 	}
+	if err := a.saveSiteFile(site.ID); err != nil {
+		return RetentionReport{}, err
+	}
 	site.Retention = policy
 	return a.retain(site, enabledTargets(site), nil), nil
 }
@@ -70,9 +74,10 @@ func validateRetention(policy model.Retention) error {
 }
 
 type repoTarget struct {
-	Label string
-	Repo  string
-	Env   []string
+	Label      string
+	Repo       string
+	Env        []string
+	GlobalOpts []string
 }
 
 func (a *App) retain(site model.Site, targets []repoTarget, note *progressWriter) RetentionReport {
@@ -130,7 +135,7 @@ func (a *App) retainCopy(restic archive.Runner, password string, site model.Site
 	if !strings.Contains(target.Repo, ":") && !repoReady(target.Repo) {
 		return nil
 	}
-	if _, err := restic.Forget(target.Repo, password, target.Env, site.ID, site.Retention); err != nil {
+	if _, err := restic.Forget(target.Repo, password, target.Env, site.ID, site.Retention, target.GlobalOpts...); err != nil {
 		if missingRepo(err) {
 			return nil
 		}
@@ -140,7 +145,7 @@ func (a *App) retainCopy(restic archive.Runner, password string, site model.Site
 		}
 		return []string{text + " " + warnText(err)}
 	}
-	if err := restic.Prune(target.Repo, password, target.Env); err != nil && !missingRepo(err) {
+	if err := restic.Prune(target.Repo, password, target.Env, target.GlobalOpts...); err != nil && !missingRepo(err) {
 		return []string{"Retention removed snapshots on " + target.Label + ", but that copy was not pruned. The next backup will try again."}
 	}
 	return nil
@@ -252,7 +257,10 @@ func enabledTargets(site model.Site) []repoTarget {
 		if err != nil {
 			continue
 		}
-		targets = append(targets, repoTarget{Label: destLabel(dest), Repo: url, Env: loadEnvFile(dest.CredentialFile)})
+		targets = append(targets, repoTarget{
+			Label: destLabel(dest), Repo: url, Env: loadEnvFile(dest.CredentialFile),
+			GlobalOpts: destGlobalOpts(dest),
+		})
 	}
 	return targets
 }
@@ -268,24 +276,32 @@ func copiedTargets(site model.Site, results []model.DestResult) []repoTarget {
 			continue
 		}
 		dest := byID[result.ID]
-		targets = append(targets, repoTarget{Label: destLabel(dest), Repo: result.URL, Env: loadEnvFile(dest.CredentialFile)})
+		targets = append(targets, repoTarget{
+			Label: destLabel(dest), Repo: result.URL, Env: loadEnvFile(dest.CredentialFile),
+			GlobalOpts: destGlobalOpts(dest),
+		})
 	}
 	return targets
 }
 
+func destGlobalOpts(dest model.Destination) []string {
+	kind, err := destination.ByID(dest.Kind)
+	if err != nil {
+		return nil
+	}
+	rclone, err := kind.RcloneProgram()
+	if err != nil || rclone == "" {
+		return nil
+	}
+	return []string{"-o", "rclone.program=" + rclone}
+}
+
 func destLabel(dest model.Destination) string {
-	switch dest.Kind {
-	case "sftp":
-		return "the SFTP copy"
-	case "s3":
-		return "the S3 copy"
-	case "b2":
-		return "the B2 copy"
-	case "disk":
-		return "the disk copy"
-	default:
+	kind, err := destination.ByID(dest.Kind)
+	if err != nil {
 		return "the " + dest.Kind + " copy"
 	}
+	return "the " + kind.Label + " copy"
 }
 
 func recordRetention(manifest *model.Manifest, report RetentionReport) {

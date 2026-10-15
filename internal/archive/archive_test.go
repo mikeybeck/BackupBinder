@@ -4,6 +4,7 @@ import (
 	"strings"
 	"testing"
 
+	"local-backup/internal/fail"
 	"local-backup/internal/model"
 )
 
@@ -19,6 +20,24 @@ func TestDestinationURL(t *testing.T) {
 	b2, err := DestinationURL(model.Destination{Kind: "b2", Bucket: "bucket", Prefix: "site"})
 	if err != nil || b2 != "b2:bucket:site" {
 		t.Fatal(b2, err)
+	}
+	drive, err := DestinationURL(model.Destination{Kind: "gdrive", Host: "gdrive", Path: "local-backup/site"})
+	if err != nil || drive != "rclone:gdrive:local-backup/site" {
+		t.Fatal(drive, err)
+	}
+}
+
+func TestRcloneDestinationHintMissingRemote(t *testing.T) {
+	err := destinationCopyError("rclone:gdrive:local-backup/site", "initialize", `Fatal: create repository at rclone:gdrive:local-backup/site failed: error listing files: didn't find section in config file ("gdrive")`)
+	fe, ok := err.(*fail.Error)
+	if !ok {
+		t.Fatal(err)
+	}
+	if !strings.Contains(fe.Message, "gdrive") || !strings.Contains(fe.Message, "not configured") {
+		t.Fatal(fe.Message)
+	}
+	if !strings.Contains(fe.Hint, "rclone config") || !strings.Contains(fe.Hint, "'gdrive'") {
+		t.Fatal(fe.Hint)
 	}
 }
 

@@ -28,7 +28,7 @@ func Open(home string) (*Store, error) {
 	if err := os.Chmod(home, 0o700); err != nil {
 		return nil, err
 	}
-	for _, dir := range []string{"secrets", "restic", "manifests", "runs", "cache", "scratch", "staging"} {
+	for _, dir := range []string{"secrets", "restic", "manifests", "runs", "cache", "scratch", "staging", "sites", "copies"} {
 		if err := os.MkdirAll(filepath.Join(home, dir), 0o700); err != nil {
 			return nil, err
 		}
@@ -101,7 +101,10 @@ CREATE TABLE IF NOT EXISTS runs (
 	if err := s.addLimitColumn("location_json", `ALTER TABLE sites ADD COLUMN location_json TEXT NOT NULL DEFAULT ''`); err != nil {
 		return err
 	}
-	return s.addLimitColumn("retention_json", `ALTER TABLE sites ADD COLUMN retention_json TEXT NOT NULL DEFAULT ''`)
+	if err := s.addLimitColumn("retention_json", `ALTER TABLE sites ADD COLUMN retention_json TEXT NOT NULL DEFAULT ''`); err != nil {
+		return err
+	}
+	return s.addLimitColumn("setup_json", `ALTER TABLE sites ADD COLUMN setup_json TEXT NOT NULL DEFAULT ''`)
 }
 
 func (s *Store) addLimitColumn(column, statement string) error {
@@ -132,8 +135,12 @@ func (s *Store) CreateSite(site model.Site) error {
 	if _, err := s.GetSite(site.ID); err == nil {
 		return fail.New("already_registered", "A site with id "+site.ID+" is already registered.")
 	}
-	now := time.Now().UTC().Format(time.RFC3339)
+	now := time.Now().UTC().Format(time.RFC3339Nano)
 	sources, err := json.Marshal(site.Sources)
+	if err != nil {
+		return err
+	}
+	location, retention, setup, err := siteExtras(site)
 	if err != nil {
 		return err
 	}
@@ -142,9 +149,9 @@ func (s *Store) CreateSite(site model.Site) error {
 		return err
 	}
 	defer tx.Rollback()
-	_, err = tx.Exec(`INSERT INTO sites (id, name, root, adapter, sources_json, schedule_cron, schedule_enabled, schedule_last_slot, restore_verified_at, restore_run_id, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		site.ID, site.Name, site.Root, site.Adapter, string(sources), emptyNil(site.Schedule.Cron), boolInt(site.Schedule.Enabled), emptyNil(site.Schedule.LastSlot), emptyNil(site.RestoreConfidence.LastVerifiedAt), emptyNil(site.RestoreConfidence.RunID), now, now)
+	_, err = tx.Exec(`INSERT INTO sites (id, name, root, adapter, sources_json, schedule_cron, schedule_enabled, schedule_last_slot, restore_verified_at, restore_run_id, created_at, updated_at, limit_upload_kib, limit_download_kib, location_json, retention_json, setup_json)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		site.ID, site.Name, site.Root, site.Adapter, string(sources), emptyNil(site.Schedule.Cron), boolInt(site.Schedule.Enabled), emptyNil(site.Schedule.LastSlot), emptyNil(site.RestoreConfidence.LastVerifiedAt), emptyNil(site.RestoreConfidence.RunID), now, now, site.Limits.UploadKiB, site.Limits.DownloadKiB, location, retention, setup)
 	if err != nil {
 		return err
 	}
@@ -188,6 +195,59 @@ func (s *Store) AddDestination(siteID string, dest model.Destination) error {
 	defer tx.Rollback()
 	if err := insertDest(tx, siteID, dest); err != nil {
 		return err
+	}
+	if _, err := tx.Exec(`UPDATE sites SET updated_at = ? WHERE id = ?`, time.Now().UTC().Format(time.RFC3339), siteID); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+// UpdateDestination replaces one destination's enabled flag and config.
+func (s *Store) UpdateDestination(siteID string, dest model.Destination) error {
+	config, err := json.Marshal(destConfigOf(dest))
+	if err != nil {
+		return err
+	}
+	tx, err := s.DB.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	res, err := tx.Exec(`UPDATE destinations SET kind = ?, enabled = ?, config_json = ? WHERE site_id = ? AND id = ?`,
+		dest.Kind, boolInt(dest.Enabled), string(config), siteID, dest.ID)
+	if err != nil {
+		return err
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if n == 0 {
+		return sql.ErrNoRows
+	}
+	if _, err := tx.Exec(`UPDATE sites SET updated_at = ? WHERE id = ?`, time.Now().UTC().Format(time.RFC3339), siteID); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+// RemoveDestination deletes one destination row.
+func (s *Store) RemoveDestination(siteID, destID string) error {
+	tx, err := s.DB.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	res, err := tx.Exec(`DELETE FROM destinations WHERE site_id = ? AND id = ?`, siteID, destID)
+	if err != nil {
+		return err
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if n == 0 {
+		return sql.ErrNoRows
 	}
 	if _, err := tx.Exec(`UPDATE sites SET updated_at = ? WHERE id = ?`, time.Now().UTC().Format(time.RFC3339), siteID); err != nil {
 		return err
@@ -239,12 +299,103 @@ func (s *Store) SaveLocation(siteID, root string, loc model.Location) error {
 		return err
 	}
 	_, err = s.DB.Exec(`UPDATE sites SET root = ?, location_json = ?, updated_at = ? WHERE id = ?`,
-		root, string(raw), time.Now().UTC().Format(time.RFC3339), siteID)
+		root, string(raw), time.Now().UTC().Format(time.RFC3339Nano), siteID)
 	return err
 }
 
+func (s *Store) SaveName(siteID, name string) error {
+	_, err := s.DB.Exec(`UPDATE sites SET name = ?, updated_at = ? WHERE id = ?`,
+		name, time.Now().UTC().Format(time.RFC3339Nano), siteID)
+	return err
+}
+
+func (s *Store) SaveSetup(siteID string, steps []string) error {
+	if steps == nil {
+		steps = []string{}
+	}
+	raw, err := json.Marshal(steps)
+	if err != nil {
+		return err
+	}
+	_, err = s.DB.Exec(`UPDATE sites SET setup_json = ?, updated_at = ? WHERE id = ?`,
+		string(raw), time.Now().UTC().Format(time.RFC3339Nano), siteID)
+	return err
+}
+
+// SetUpdatedAt records when the site file was last applied. It does not rewrite the file.
+func (s *Store) SetUpdatedAt(siteID string, at time.Time) error {
+	_, err := s.DB.Exec(`UPDATE sites SET updated_at = ? WHERE id = ?`, at.UTC().Format(time.RFC3339Nano), siteID)
+	return err
+}
+
+// ImportSite replaces the saved contract with one read from a site file.
+// Restore confidence and the last schedule slot stay.
+func (s *Store) ImportSite(site model.Site, updated time.Time) error {
+	_, err := s.GetSite(site.ID)
+	if err != nil {
+		if fe, ok := err.(*fail.Error); !ok || fe.Code != "not_found" {
+			return err
+		}
+		if err := s.CreateSite(site); err != nil {
+			return err
+		}
+		return s.SetUpdatedAt(site.ID, updated)
+	}
+	sources, err := json.Marshal(site.Sources)
+	if err != nil {
+		return err
+	}
+	location, retention, setup, err := siteExtras(site)
+	if err != nil {
+		return err
+	}
+	tx, err := s.DB.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	_, err = tx.Exec(`UPDATE sites SET name = ?, root = ?, adapter = ?, sources_json = ?, schedule_cron = ?, schedule_enabled = ?, limit_upload_kib = ?, limit_download_kib = ?, location_json = ?, retention_json = ?, setup_json = ?, updated_at = ? WHERE id = ?`,
+		site.Name, site.Root, site.Adapter, string(sources), emptyNil(site.Schedule.Cron), boolInt(site.Schedule.Enabled), site.Limits.UploadKiB, site.Limits.DownloadKiB, location, retention, setup, updated.UTC().Format(time.RFC3339Nano), site.ID)
+	if err != nil {
+		return err
+	}
+	if _, err := tx.Exec(`DELETE FROM destinations WHERE site_id = ?`, site.ID); err != nil {
+		return err
+	}
+	for _, dest := range site.Destinations {
+		if err := insertDest(tx, site.ID, dest); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
+}
+
+func siteExtras(site model.Site) (string, string, string, error) {
+	location := ""
+	if site.Location.Kind != "" || site.Location.Host != "" || site.Location.User != "" || site.Location.Path != "" {
+		raw, err := json.Marshal(site.Location)
+		if err != nil {
+			return "", "", "", err
+		}
+		location = string(raw)
+	}
+	rawRetention, err := json.Marshal(site.Retention)
+	if err != nil {
+		return "", "", "", err
+	}
+	setup := ""
+	if site.Setup != nil {
+		raw, err := json.Marshal(site.Setup)
+		if err != nil {
+			return "", "", "", err
+		}
+		setup = string(raw)
+	}
+	return location, string(rawRetention), setup, nil
+}
+
 func (s *Store) GetSite(id string) (model.Site, error) {
-	row := s.DB.QueryRow(`SELECT id, name, root, adapter, sources_json, schedule_cron, schedule_enabled, schedule_last_slot, restore_verified_at, restore_run_id, created_at, limit_upload_kib, limit_download_kib, location_json, retention_json FROM sites WHERE id = ?`, id)
+	row := s.DB.QueryRow(`SELECT id, name, root, adapter, sources_json, schedule_cron, schedule_enabled, schedule_last_slot, restore_verified_at, restore_run_id, created_at, limit_upload_kib, limit_download_kib, location_json, retention_json, updated_at, setup_json FROM sites WHERE id = ?`, id)
 	site, err := scanSite(row)
 	if errors.Is(err, sql.ErrNoRows) {
 		return model.Site{}, fail.New("not_found", "No site is registered with id "+id+".")
@@ -327,9 +478,9 @@ type scanner interface {
 
 func scanSite(row scanner) (model.Site, error) {
 	var site model.Site
-	var sources, cron, slot, verified, runID, location, retention sql.NullString
+	var sources, cron, slot, verified, runID, location, retention, updated, setup sql.NullString
 	var enabled int
-	err := row.Scan(&site.ID, &site.Name, &site.Root, &site.Adapter, &sources, &cron, &enabled, &slot, &verified, &runID, &site.CreatedAt, &site.Limits.UploadKiB, &site.Limits.DownloadKiB, &location, &retention)
+	err := row.Scan(&site.ID, &site.Name, &site.Root, &site.Adapter, &sources, &cron, &enabled, &slot, &verified, &runID, &site.CreatedAt, &site.Limits.UploadKiB, &site.Limits.DownloadKiB, &location, &retention, &updated, &setup)
 	if err != nil {
 		return model.Site{}, err
 	}
@@ -356,6 +507,12 @@ func scanSite(row scanner) (model.Site, error) {
 	if retention.Valid && retention.String != "" {
 		site.Retention = model.Retention{}
 		if err := json.Unmarshal([]byte(retention.String), &site.Retention); err != nil {
+			return model.Site{}, err
+		}
+	}
+	site.UpdatedAt = updated.String
+	if setup.Valid && setup.String != "" && setup.String != "null" {
+		if err := json.Unmarshal([]byte(setup.String), &site.Setup); err != nil {
 			return model.Site{}, err
 		}
 	}

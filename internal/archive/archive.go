@@ -15,6 +15,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"local-backup/internal/destination"
 	"local-backup/internal/fail"
 	"local-backup/internal/model"
 )
@@ -188,11 +189,11 @@ type ForgetOutcome struct {
 // Forget applies a retention policy. Snapshots from one site share a repository, but each
 // run is stored under its own directory, so restic's default host+path groups would keep
 // every run. Grouping by host makes the policy apply to the whole site.
-func (r Runner) Forget(repo, passwordFile string, extraEnv []string, siteID string, policy model.Retention) (ForgetOutcome, error) {
+func (r Runner) Forget(repo, passwordFile string, extraEnv []string, siteID string, policy model.Retention, globalOpts ...string) (ForgetOutcome, error) {
 	if !policy.Active() {
 		return ForgetOutcome{}, nil
 	}
-	args := []string{"forget", "--json", "--group-by", "host", "--host", "local-backup", "--tag", "site=" + siteID}
+	args := append(append([]string{}, globalOpts...), "forget", "--json", "--group-by", "host", "--host", "local-backup", "--tag", "site="+siteID)
 	args = append(args, policy.ForgetArgs()...)
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Hour)
 	defer cancel()
@@ -251,10 +252,11 @@ func runTag(tags []string) string {
 }
 
 // Prune deletes repository data that no snapshot references.
-func (r Runner) Prune(repo, passwordFile string, extraEnv []string) error {
+func (r Runner) Prune(repo, passwordFile string, extraEnv []string, globalOpts ...string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Hour)
 	defer cancel()
-	_, stderr, code, err := r.run(ctx, repo, passwordFile, extraEnv, nil, "prune")
+	args := append(append([]string{}, globalOpts...), "prune")
+	_, stderr, code, err := r.run(ctx, repo, passwordFile, extraEnv, nil, args...)
 	if err != nil {
 		return err
 	}
@@ -299,24 +301,112 @@ func (r Runner) Restore(repo, passwordFile, snapshotID, target string) error {
 }
 
 // Copy copies one snapshot into another repository. The destination is initialized first.
-func (r Runner) Copy(sourceRepo, passwordFile, destURL, snapshotID string, extraEnv []string) error {
+// globalOpts are restic global flags placed before the subcommand (for example -o rclone.program=...).
+func (r Runner) Copy(sourceRepo, passwordFile, destURL, snapshotID string, extraEnv []string, globalOpts ...string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Hour)
 	defer cancel()
-	_, stderr, code, err := r.run(ctx, destURL, passwordFile, extraEnv, nil, "init", "--copy-chunker-params", "--from-repo", sourceRepo, "--from-password-file", passwordFile)
+	initArgs := append(append([]string{}, globalOpts...), "init", "--copy-chunker-params", "--from-repo", sourceRepo, "--from-password-file", passwordFile)
+	_, stderr, code, err := r.run(ctx, destURL, passwordFile, extraEnv, nil, initArgs...)
 	if err != nil {
 		return err
 	}
 	if code != 0 && !strings.Contains(strings.ToLower(stderr), "already") {
-		return &fail.Error{Code: "destination_failed", Message: "The destination restic repository could not be initialized.", Step: "destination", ExitCode: fail.ExitCode(code), Stderr: tail(stderr), Hint: "Check the destination URL and credentials. The local snapshot is already stored."}
+		return destinationCopyError(destURL, "initialize", stderr)
 	}
-	_, stderr, code, err = r.run(ctx, destURL, passwordFile, extraEnv, nil, "copy", "--from-repo", sourceRepo, "--from-password-file", passwordFile, snapshotID)
+	copyArgs := append(append([]string{}, globalOpts...), "copy", "--from-repo", sourceRepo, "--from-password-file", passwordFile, snapshotID)
+	_, stderr, code, err = r.run(ctx, destURL, passwordFile, extraEnv, nil, copyArgs...)
 	if err != nil {
 		return err
 	}
 	if code != 0 {
-		return &fail.Error{Code: "destination_failed", Message: "restic could not copy the snapshot to that destination.", Step: "destination", ExitCode: fail.ExitCode(code), Stderr: tail(stderr), Hint: "The local snapshot is safe. Fix the destination and back up again to copy it."}
+		return destinationCopyError(destURL, "copy", stderr)
 	}
 	return nil
+}
+
+func destinationCopyError(destURL, op, stderr string) error {
+	message := "The destination restic repository could not be initialized."
+	hint := "Check the destination URL and credentials. The local snapshot is already stored."
+	if op == "copy" {
+		message = "restic could not copy the snapshot to that destination."
+		hint = "The local snapshot is safe. Fix the destination and back up again to copy it."
+	}
+	if strings.HasPrefix(destURL, "rclone:") {
+		message, hint = rcloneDestinationHint(destURL, op, stderr)
+	}
+	return &fail.Error{
+		Code: "destination_failed", Message: message, Step: "destination",
+		Stderr: tail(stderr), Hint: hint,
+	}
+}
+
+// rcloneDestinationHint turns restic/rclone stderr into a fixable message.
+func rcloneDestinationHint(destURL, op, stderr string) (string, string) {
+	remote, path := splitRcloneURL(destURL)
+	lower := strings.ToLower(stderr)
+	switch {
+	case strings.Contains(lower, "didn't find section") || (strings.Contains(lower, "config file") && strings.Contains(lower, "not found")):
+		name := remote
+		if name == "" {
+			name = "that remote"
+		}
+		return "Google Drive / rclone remote " + quote(name) + " is not configured.",
+			"Run rclone config and create a Google Drive remote named " + quote(name) + ". Then back up again. The local snapshot is already stored."
+	case strings.Contains(lower, "failed to create file system"):
+		return "rclone could not open " + destURL + ".",
+			"Check that rclone remote " + quote(remote) + " exists (rclone listremotes) and the folder path is correct. The local snapshot is already stored."
+	case strings.Contains(lower, "token expired") || strings.Contains(lower, "unable to refresh") || strings.Contains(lower, "oauth"):
+		return "The Google Drive / rclone login for " + quote(remote) + " needs to be renewed.",
+			"Run rclone config reconnect " + quote(remote) + ": and authorize again. The local snapshot is already stored."
+	case strings.Contains(lower, "executable file not found") || strings.Contains(lower, "rclone:") && strings.Contains(lower, "not found"):
+		return "rclone is not available for this destination.",
+			"Install rclone, put it on PATH, or set LOCAL_BACKUP_RCLONE / .tools/rclone. The local snapshot is already stored."
+	default:
+		detail := firstUsefulLine(stderr)
+		message := "Could not " + op + " the rclone destination " + destURL + "."
+		if detail != "" {
+			message += " " + detail
+		}
+		hint := "Fix the rclone remote"
+		if remote != "" {
+			hint += " " + quote(remote)
+		}
+		if path != "" {
+			hint += " and folder " + quote(path)
+		}
+		hint += ", then back up again. The local snapshot is already stored."
+		return message, hint
+	}
+}
+
+func splitRcloneURL(destURL string) (remote, path string) {
+	rest := strings.TrimPrefix(destURL, "rclone:")
+	remote, path, _ = strings.Cut(rest, ":")
+	return remote, path
+}
+
+func quote(s string) string {
+	if s == "" {
+		return s
+	}
+	return "'" + s + "'"
+}
+
+func firstUsefulLine(stderr string) string {
+	for _, line := range strings.Split(stderr, "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		lower := strings.ToLower(line)
+		if strings.HasPrefix(lower, "rclone:") || strings.Contains(lower, "fatal") || strings.Contains(lower, "error") || strings.Contains(lower, "failed") || strings.Contains(lower, "critical") {
+			if len(line) > 240 {
+				return line[:240]
+			}
+			return line
+		}
+	}
+	return ""
 }
 
 func (r Runner) run(ctx context.Context, repo, passwordFile string, extraEnv []string, onStdout func(string), args ...string) (string, string, int, error) {
@@ -462,36 +552,9 @@ func tail(s string) string {
 
 // DestinationURL builds a restic repository URL. It does not open a connection.
 func DestinationURL(dest model.Destination) (string, error) {
-	switch dest.Kind {
-	case "sftp":
-		path := dest.Path
-		if !strings.HasPrefix(path, "/") {
-			path = "/" + path
-		}
-		return "sftp:" + dest.User + "@" + dest.Host + ":" + path, nil
-	case "s3":
-		endpoint := strings.TrimSpace(dest.Endpoint)
-		if endpoint == "" {
-			endpoint = "s3.amazonaws.com"
-		}
-		endpoint = strings.TrimPrefix(strings.TrimPrefix(endpoint, "https://"), "http://")
-		endpoint = strings.Trim(endpoint, "/")
-		bucket := strings.Trim(dest.Bucket, "/")
-		base := "s3:" + endpoint + "/" + bucket
-		prefix := strings.Trim(dest.Prefix, "/")
-		if prefix != "" {
-			return base + "/" + prefix, nil
-		}
-		return base, nil
-	case "b2":
-		prefix := strings.Trim(dest.Prefix, "/")
-		if prefix != "" {
-			return "b2:" + dest.Bucket + ":" + prefix, nil
-		}
-		return "b2:" + dest.Bucket + ":/", nil
-	case "disk":
-		return dest.Path, nil
-	default:
-		return "", fail.New("bad_destination", "Unknown destination kind "+dest.Kind+".")
+	kind, err := destination.ByID(dest.Kind)
+	if err != nil {
+		return "", err
 	}
+	return kind.URL(dest)
 }

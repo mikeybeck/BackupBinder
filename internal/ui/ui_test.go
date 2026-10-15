@@ -172,6 +172,59 @@ func TestRetentionFormShowsSavedCounts(t *testing.T) {
 	}
 }
 
+func TestDestinationFormShowsFailureReason(t *testing.T) {
+	tmpl := template.Must(template.New("page").Parse(pageHTML))
+	var buf bytes.Buffer
+	err := tmpl.ExecuteTemplate(&buf, "site", page{
+		Site: &siteView{
+			ID: "demo", Name: "Demo", Status: "success", Root: "/tmp/copy",
+			DestWarning: "Google Drive / rclone remote 'gdrive' is not configured.",
+			Destinations: []destView{{
+				ID: "gdrive-1", Kind: "gdrive", Enabled: true, Status: "failed",
+				Detail: "gdrive:local-backup/site",
+				Reason: "Google Drive / rclone remote 'gdrive' is not configured. Run rclone config and create a Google Drive remote named 'gdrive'.",
+			}},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := buf.String()
+	for _, want := range []string{
+		"last run failed", "rclone remote", "not configured", "Run rclone config",
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("missing %q in %s", want, body)
+		}
+	}
+}
+
+func TestDestinationFormOffersGoogleDrive(t *testing.T) {
+	tmpl := template.Must(template.New("page").Parse(pageHTML))
+	var buf bytes.Buffer
+	err := tmpl.ExecuteTemplate(&buf, "site", page{
+		Site: &siteView{ID: "demo", Name: "Demo", Status: "none", Root: "/tmp/copy"},
+		DestKinds: []destKindView{
+			{ID: "gdrive", Label: "Google Drive", Note: "uses rclone", Fields: []destFieldView{
+				{Name: "host", Label: "rclone remote name", Placeholder: "gdrive"},
+				{Name: "path", Label: "Folder in Google Drive", Placeholder: "local-backup/site"},
+			}},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := buf.String()
+	for _, want := range []string{
+		`value="gdrive"`, `data-for="gdrive"`, "rclone remote name", "Folder in Google Drive",
+		`input.disabled = !show`, "destinations/",
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("missing %q", want)
+		}
+	}
+}
+
 func TestLocationFormOffersOneServer(t *testing.T) {
 	tmpl := template.Must(template.New("page").Parse(pageHTML))
 	var buf bytes.Buffer

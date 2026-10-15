@@ -1,0 +1,22 @@
+{
+  "id": "s3",
+  "label": "S3",
+  "note": "Fields are bucket, access-key, and secret-key. The keys are stored and are not printed back.",
+  "offsite": true,
+  "fields": [
+    {"name": "bucket", "label": "Bucket", "required": true, "pattern": "bucket", "setup": "bucket"},
+    {"name": "prefix", "label": "Prefix", "required": false, "pattern": "rel_path", "setup": "prefix"},
+    {"name": "endpoint", "label": "S3 endpoint", "required": false, "pattern": "endpoint", "setup": "endpoint", "placeholder": "s3.amazonaws.com"}
+  ],
+  "credentials": {
+    "access_env": "AWS_ACCESS_KEY_ID",
+    "secret_env": "AWS_SECRET_ACCESS_KEY",
+    "access_label": "Access key",
+    "secret_label": "Secret key",
+    "required_at_setup": true
+  },
+  "url": "s3:{endpoint_host}/{bucket}/{prefix_trim}",
+  "url_when_prefix_empty": "s3:{endpoint_host}/{bucket}",
+  "progress": "Copying to {bucket}",
+  "detail": "{bucket}"
+}

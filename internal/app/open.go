@@ -42,12 +42,17 @@ func Open(home string) (*App, error) {
 		db.Close()
 		return nil, err
 	}
-	return &App{
+	application := &App{
 		Home:     abs,
 		RepoRoot: findModuleRoot(),
 		DB:       db,
 		Restic:   archive.Runner{Binary: binary, CacheDir: filepath.Join(abs, "cache", "restic")},
-	}, nil
+	}
+	if err := application.ReloadSites(); err != nil {
+		db.Close()
+		return nil, err
+	}
+	return application, nil
 }
 
 func (a *App) resticFor(site model.Site) archive.Runner {

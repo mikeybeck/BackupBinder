@@ -37,6 +37,9 @@ func (a *App) SetLimits(siteID string, upload, download *int) (model.Limits, err
 	if err := a.DB.SaveLimits(site.ID, limits); err != nil {
 		return model.Limits{}, err
 	}
+	if err := a.saveSiteFile(site.ID); err != nil {
+		return model.Limits{}, err
+	}
 	return limits, nil
 }
 

@@ -37,6 +37,11 @@ func TestStageFilesSkipsJunkSymlinksAndExcludes(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	estimate, err := EstimateFiles(root, []string{"logs"})
+	if err != nil {
+		t.Fatal(err)
+	}
+
 	var seen []string
 	report, err := StageFiles(root, t.TempDir(), []string{"logs"}, func(rel string, n int) {
 		seen = append(seen, rel)
@@ -49,6 +54,9 @@ func TestStageFilesSkipsJunkSymlinksAndExcludes(t *testing.T) {
 	}
 	if report.FileCount != 1 || report.ByteSize != int64(len(body)) {
 		t.Fatalf("%#v", report)
+	}
+	if estimate.FileCount != report.FileCount || estimate.ByteSize != report.ByteSize {
+		t.Fatalf("estimate %#v stage %#v", estimate, report)
 	}
 	if len(report.Inventory) != 1 || report.Inventory[0].Path != "keep/sub/note.txt" {
 		t.Fatalf("%#v", report.Inventory)

@@ -3,6 +3,7 @@ package agent
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"local-backup/internal/app"
@@ -19,13 +20,23 @@ func TestCatalogIncludesSetup(t *testing.T) {
 		if cmd.Name == "setup" {
 			found = true
 			sawPath := false
+			sawRemote := false
 			for _, flag := range cmd.Flags {
 				if flag.Name == "remote-path" {
 					sawPath = true
 				}
+				if flag.Name == "remote" {
+					sawRemote = true
+					if !strings.Contains(flag.Placeholder, "gdrive") || !strings.Contains(flag.Placeholder, "sftp") {
+						t.Fatalf("remote placeholder %q", flag.Placeholder)
+					}
+				}
 			}
 			if !sawPath {
 				t.Fatal("remote-path missing")
+			}
+			if !sawRemote {
+				t.Fatal("remote missing")
 			}
 		}
 	}

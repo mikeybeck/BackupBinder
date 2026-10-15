@@ -1,0 +1,21 @@
+{
+  "id": "b2",
+  "label": "Backblaze B2",
+  "note": "Fields are bucket, access-key, and secret-key. The keys are stored and are not printed back.",
+  "offsite": true,
+  "fields": [
+    {"name": "bucket", "label": "Bucket", "required": true, "pattern": "bucket", "setup": "bucket"},
+    {"name": "prefix", "label": "Prefix", "required": false, "pattern": "rel_path", "setup": "prefix"}
+  ],
+  "credentials": {
+    "access_env": "B2_ACCOUNT_ID",
+    "secret_env": "B2_ACCOUNT_KEY",
+    "access_label": "B2 account id",
+    "secret_label": "B2 application key",
+    "required_at_setup": true
+  },
+  "url": "b2:{bucket}:{prefix_trim}",
+  "url_when_prefix_empty": "b2:{bucket}:/",
+  "progress": "Copying to {bucket}",
+  "detail": "{bucket}"
+}

@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"local-backup/internal/app"
+	"local-backup/internal/destination"
 	"local-backup/internal/discover"
 	"local-backup/internal/fail"
 	"local-backup/internal/model"
@@ -35,12 +36,12 @@ type Catalog struct {
 	Commands     []Command `json:"commands"`
 }
 
-const instructions = "Before backing up, call identify with the exact name the user used. If access.ask_user is true, ask the user how this machine reaches the site, then ask only for that option's fields. Do not invent host, user, path, or keys. Do not back up a different local directory. SFTP uses the SSH keys already on this machine. Do not ask for an SSH password. A backup, schedule change, destination change, retention change, or database setting change also requires that match's id and root. If a tool returns phase needs_input, ask the user for each field in next.fields and call the tool again with their answers. Never print database passwords, access keys, or secret keys."
+const instructions = "Before backing up an existing site by name, call identify with the exact name the user used. If access.ask_user is true, ask the user how this machine reaches the site, then ask only for that option's fields. Do not back up a different local directory. If the user points at a directory or a server, call setup with that location, then ask only what next describes and call setup again. --path is a directory on this machine. A server is --host, --user, and --remote-path. Do not invent host, user, path, or keys. Do not pass a directory and a server together. SFTP uses the SSH keys already on this machine. Do not ask for an SSH password. --no-database, --remote none, --no-schedule, and --no-backup decline that step. Stop when phase is ready. A backup, schedule change, destination change, retention change, or database setting change also requires that site's id and root. If a tool returns phase needs_input, ask the user for each field in next.fields and call the tool again with their answers. Never print database passwords, access keys, or secret keys."
 
 // Commands is the stable list. Tool is false for commands that do not return to the caller.
 var Commands = []Command{
 	{Name: "agent", Summary: "Print this catalog.", Tool: true},
-	{Name: "setup", Summary: "Register a site if needed and return the next step. --path is the site directory. --remote-path is the remote directory.", Tool: true, Flags: []Flag{
+	{Name: "setup", Summary: "Walk through backup setup. --path is a directory on this machine. A server is --host, --user, and --remote-path. Each response says which decision is next. --remote-path is also the remote directory for a destination.", Tool: true, Flags: []Flag{
 		{Name: "path", Placeholder: "DIR", Description: "site directory"},
 		{Name: "name", Placeholder: "NAME", Description: "display name"},
 		{Name: "id", Placeholder: "ID", Description: "site id"},
@@ -48,11 +49,19 @@ var Commands = []Command{
 		{Name: "backup", Bool: true, Description: "take a local backup now"},
 		{Name: "schedule", Bool: true, Description: "enable the schedule"},
 		{Name: "cron", Placeholder: "EXPR", Description: "five cron fields; default is 15 3 * * *"},
-		{Name: "remote", Placeholder: "sftp|s3|b2|disk", Description: "save a remote destination"},
+		{Name: "remote", Placeholder: "KIND", Description: "destination kind, or none to keep archives on this machine"},
 		{Name: "enabled", Bool: true, Description: "upload to the remote on the next backup"},
-		{Name: "host", Placeholder: "HOST", Description: "SFTP host"},
+		{Name: "database", Bool: true, Description: "include a database dump"},
+		{Name: "no-database", Bool: true, Description: "store files only"},
+		{Name: "db-name", Placeholder: "NAME", Description: "database name"},
+		{Name: "db-user", Placeholder: "USER", Description: "database user"},
+		{Name: "db-host", Placeholder: "HOST", Description: "database host"},
+		{Name: "db-password", Placeholder: "SECRET", Description: "database password; saved under secrets; not printed back"},
+		{Name: "no-schedule", Bool: true, Description: "leave the schedule off"},
+		{Name: "no-backup", Bool: true, Description: "finish setup without a backup"},
+		{Name: "host", Placeholder: "HOST", Description: "SFTP host, or destination host/remote name"},
 		{Name: "user", Placeholder: "USER", Description: "SFTP user"},
-		{Name: "remote-path", Placeholder: "PATH", Description: "SFTP path or disk path"},
+		{Name: "remote-path", Placeholder: "PATH", Description: "SFTP path, disk path, or destination folder path"},
 		{Name: "bucket", Placeholder: "BUCKET", Description: "bucket"},
 		{Name: "prefix", Placeholder: "PREFIX", Description: "key prefix"},
 		{Name: "endpoint", Placeholder: "HOST", Description: "S3 endpoint hostname"},
@@ -124,19 +133,30 @@ var Commands = []Command{
 		{Name: "id", Placeholder: "ID", Description: "site id", Required: true},
 		{Name: "root", Placeholder: "DIR", Description: "exact root from identify", Required: true},
 	}},
-	{Name: "add_destination", Summary: "Save a destination for the site whose id and root both match. It is not contacted until enabled.", Tool: true, Flags: []Flag{
+	{Name: "add_destination", Summary: "Save a destination for the site whose id and root both match. Rclone remote names are checked against local rclone config when set. Enabled destinations are probed when saved; disabled ones are not contacted until enabled.", Tool: true, Flags: []Flag{
 		{Name: "id", Placeholder: "ID", Description: "site id", Required: true},
 		{Name: "root", Placeholder: "DIR", Description: "exact root from identify", Required: true},
-		{Name: "kind", Placeholder: "sftp|s3|b2|disk", Description: "destination kind", Required: true},
+		{Name: "kind", Placeholder: "KIND", Description: "destination kind", Required: true},
 		{Name: "enabled", Bool: true, Description: "upload on the next backup"},
-		{Name: "host", Placeholder: "HOST", Description: "SFTP host"},
+		{Name: "host", Placeholder: "HOST", Description: "SFTP host, or destination host/remote name"},
 		{Name: "user", Placeholder: "USER", Description: "SFTP user"},
-		{Name: "path", Placeholder: "PATH", Description: "SFTP path or disk path"},
+		{Name: "path", Placeholder: "PATH", Description: "SFTP path, disk path, or destination folder path"},
 		{Name: "bucket", Placeholder: "BUCKET", Description: "bucket"},
 		{Name: "prefix", Placeholder: "PREFIX", Description: "key prefix"},
 		{Name: "endpoint", Placeholder: "HOST", Description: "S3 endpoint hostname"},
 		{Name: "access-key", Placeholder: "KEY", Description: "S3 access key or B2 account id; not printed back"},
 		{Name: "secret-key", Placeholder: "SECRET", Description: "S3 secret or B2 application key; not printed back"},
+	}},
+	{Name: "set_destination", Summary: "Enable or disable a saved destination for the site whose id and root both match. Enabling probes reachability. The local restic repository cannot be disabled.", Tool: true, Flags: []Flag{
+		{Name: "id", Placeholder: "ID", Description: "site id", Required: true},
+		{Name: "root", Placeholder: "DIR", Description: "exact root from identify", Required: true},
+		{Name: "destination", Placeholder: "DEST", Description: "destination id from inspect_site", Required: true},
+		{Name: "enabled", Bool: true, Description: "upload on the next backup"},
+	}},
+	{Name: "remove_destination", Summary: "Remove a saved destination for the site whose id and root both match. The local restic repository cannot be removed.", Tool: true, Flags: []Flag{
+		{Name: "id", Placeholder: "ID", Description: "site id", Required: true},
+		{Name: "root", Placeholder: "DIR", Description: "exact root from identify", Required: true},
+		{Name: "destination", Placeholder: "DEST", Description: "destination id from inspect_site", Required: true},
 	}},
 	{Name: "create_backup", Summary: "Back up the site whose id and root both match. Refuses a different root.", Tool: true, Flags: []Flag{
 		{Name: "id", Placeholder: "ID", Description: "site id", Required: true},
@@ -180,7 +200,23 @@ var Commands = []Command{
 
 // CatalogDocument is the JSON from `local-backup agent`.
 func CatalogDocument() Catalog {
-	return Catalog{OK: true, Instructions: instructions, Commands: Commands}
+	ids := destination.IDs()
+	commands := make([]Command, len(Commands))
+	for i, cmd := range Commands {
+		commands[i] = cmd
+		if len(cmd.Flags) == 0 {
+			continue
+		}
+		flags := make([]Flag, len(cmd.Flags))
+		copy(flags, cmd.Flags)
+		for j := range flags {
+			if (flags[j].Name == "remote" || flags[j].Name == "kind") && flags[j].Placeholder == "KIND" {
+				flags[j].Placeholder = ids
+			}
+		}
+		commands[i].Flags = flags
+	}
+	return Catalog{OK: true, Instructions: instructions, Commands: commands}
 }
 
 // Usage is the text printed when the command is missing.
@@ -244,6 +280,11 @@ func Execute(application *app.App, name string, args map[string]any) (any, error
 	cmd, ok := Lookup(name)
 	if !ok || name == "mcp" || name == "serve" {
 		return nil, fail.New("bad_command", "Unknown command. Run local-backup agent.")
+	}
+	if application != nil {
+		if err := application.ReloadSites(); err != nil {
+			return nil, err
+		}
 	}
 	for _, f := range cmd.Flags {
 		if f.Required && !f.Bool && strings.TrimSpace(asString(args, f.Name)) == "" {
@@ -388,6 +429,23 @@ func Execute(application *app.App, name string, args map[string]any) (any, error
 			return nil, err
 		}
 		return map[string]any{"ok": true, "destination": dest}, nil
+	case "set_destination":
+		if _, err := application.ConfirmSite(asString(args, "id"), asString(args, "root")); err != nil {
+			return nil, err
+		}
+		dest, err := application.SetDestinationEnabled(asString(args, "id"), asString(args, "destination"), asBool(args, "enabled"))
+		if err != nil {
+			return nil, err
+		}
+		return map[string]any{"ok": true, "destination": dest}, nil
+	case "remove_destination":
+		if _, err := application.ConfirmSite(asString(args, "id"), asString(args, "root")); err != nil {
+			return nil, err
+		}
+		if err := application.RemoveDestination(asString(args, "id"), asString(args, "destination")); err != nil {
+			return nil, err
+		}
+		return map[string]any{"ok": true, "removed": asString(args, "destination")}, nil
 	case "create_backup":
 		if _, err := application.ConfirmSite(asString(args, "id"), asString(args, "root")); err != nil {
 			return nil, err
@@ -416,12 +474,28 @@ func Execute(application *app.App, name string, args map[string]any) (any, error
 	case "setup":
 		return application.Setup(app.SetupInput{
 			Path: asString(args, "path"), Name: asString(args, "name"), ID: asString(args, "id"),
-			Root:   asString(args, "root"),
-			Backup: asBool(args, "backup"), Schedule: asBool(args, "schedule"), Cron: asString(args, "cron"),
-			Remote: asString(args, "remote"), Enabled: asBool(args, "enabled"),
-			Host: asString(args, "host"), User: asString(args, "user"), RemotePath: asString(args, "remote-path"),
-			Bucket: asString(args, "bucket"), Prefix: asString(args, "prefix"), Endpoint: asString(args, "endpoint"),
-			AccessKey: asString(args, "access-key"), SecretKey: asString(args, "secret-key"),
+			Root:       asString(args, "root"),
+			Backup:     asBool(args, "backup"),
+			NoBackup:   asBool(args, "no-backup"),
+			Schedule:   asBool(args, "schedule"),
+			NoSchedule: asBool(args, "no-schedule"),
+			Cron:       asString(args, "cron"),
+			Database:   asBool(args, "database"),
+			NoDatabase: asBool(args, "no-database"),
+			DBName:     asString(args, "db-name"),
+			DBUser:     asString(args, "db-user"),
+			DBHost:     asString(args, "db-host"),
+			DBPassword: asString(args, "db-password"),
+			Remote:     asString(args, "remote"),
+			Enabled:    asBool(args, "enabled"),
+			Host:       asString(args, "host"),
+			User:       asString(args, "user"),
+			RemotePath: asString(args, "remote-path"),
+			Bucket:     asString(args, "bucket"),
+			Prefix:     asString(args, "prefix"),
+			Endpoint:   asString(args, "endpoint"),
+			AccessKey:  asString(args, "access-key"),
+			SecretKey:  asString(args, "secret-key"),
 		})
 	default:
 		return nil, fail.New("bad_command", "Unknown command. Run local-backup agent.")
