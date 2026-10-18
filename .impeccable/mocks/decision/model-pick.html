@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Local backup — Household Binder</title>
+<style>
+  * { box-sizing: border-box; margin: 0; }
+  body {
+    width: 1440px; height: 900px; overflow: hidden;
+    background: #f2efe8; color: #1e2430;
+    font: 16px/1.45 system-ui, sans-serif;
+  }
+  .shell { display: grid; grid-template-columns: 220px 1fr; height: 900px; }
+  aside {
+    background: #1e2430; color: #f2efe8; padding: 1.5rem 1rem;
+    display: flex; flex-direction: column; gap: 0.35rem;
+  }
+  .brand { font-weight: 600; font-size: 1.1rem; margin-bottom: 1.5rem; padding: 0 0.5rem; }
+  .tab {
+    padding: 0.7rem 0.85rem; border-radius: 6px 0 0 6px; color: #c8cdd6;
+    text-decoration: none;
+  }
+  .tab.active { background: #f2efe8; color: #1e2430; font-weight: 600; }
+  .tab-accent { margin-top: auto; background: #0f5c57; color: #fff; text-align: center; border-radius: 6px; padding: 0.75rem; text-decoration: none; font-weight: 600; }
+  main { padding: 2.25rem 2.75rem; }
+  .tabs-meta { color: #6b7280; font-size: 0.9rem; margin-bottom: 0.5rem; }
+  h1 { font-size: 1.75rem; margin-bottom: 0.4rem; }
+  .lede { color: #4b5563; max-width: 38rem; margin-bottom: 1.75rem; }
+  .card {
+    background: #fff; border: 1px solid #ddd6c8; border-radius: 8px;
+    padding: 1.5rem; max-width: 640px; box-shadow: 0 1px 0 #e8e2d6;
+  }
+  .card h2 { font-size: 1.05rem; margin-bottom: 0.6rem; }
+  .card p { color: #4b5563; margin-bottom: 1.25rem; }
+  .btn {
+    background: #0f5c57; color: #fff; border: 0; border-radius: 6px;
+    padding: 0.7rem 1.1rem; font: inherit; font-weight: 600;
+  }
+  .hint { margin-top: 1rem; font-size: 0.88rem; color: #6b7280; }
+</style>
+</head>
+<body>
+<div class="shell">
+  <aside>
+    <div class="brand">Local backup</div>
+    <a class="tab active" href="#">Setup</a>
+    <a class="tab" href="#">Sites</a>
+    <a class="tab-accent" href="#">Set up a backup</a>
+  </aside>
+  <main>
+    <p class="tabs-meta">Tab · Setup</p>
+    <h1>Start a backup</h1>
+    <p class="lede">Choose a directory on this machine or one server. Site types are addons; unmatched paths stay files-only. Staying local is fine — destinations are optional.</p>
+    <div class="card">
+      <h2>Where are the files?</h2>
+      <p>One place to read from. SSH uses keys already on this machine. Nothing leaves this computer until you enable another destination.</p>
+      <button class="btn">Continue</button>
+      <p class="hint">After a backup exists, open the Sites tab for last run and restore confidence.</p>
+    </div>
+  </main>
+</div>
+</body>
+</html>

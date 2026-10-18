@@ -1,0 +1,144 @@
+{
+  "title": "Choose the visual world",
+  "question": "Whole localhost UI redesign for Local backup. Operate mode: minimum-hassle setup first; trust after backups exist. The roll assigned Field Notebook. Keep it, take an alternate, or re-roll.",
+  "options": [
+    {
+      "id": "assigned",
+      "label": "Field Notebook",
+      "kicker": "THE ROLL",
+      "lineage": "field notebooks and graph-paper run logs",
+      "thesis": "Your backups live as dated pages on this machine — set up first, then read trust like a margin note.",
+      "palette": ["#e6e2d6", "#2c3136", "#1a4f8b", "#5c6b4a", "#8c2f2f"],
+      "materials": ["graph paper ground", "graphite ink", "margin rule"],
+      "viewport": "Local backup shell with Set up a backup as the lead action; empty state teaches files-first local-only; when sites exist, a quiet list expands for restore confidence.",
+      "risk": "Can feel sparse or “notes app” if the setup path isn’t the loudest thing on first open.",
+      "raised": [
+        {
+          "from": "challenger-j-card",
+          "raise": "Shell names two jobs without burying trust: Set up leads; After a backup, trust is one click away."
+        },
+        {
+          "from": "challenger-botanical",
+          "raise": "Every setup step uses the same frame and scale so the wizard never reshuffles the room."
+        },
+        {
+          "from": "challenger-streaming",
+          "raise": "A site row expands in place to show last run and restore confidence — no extra destination."
+        },
+        {
+          "from": "challenger-labanotation",
+          "raise": "Backup progress encodes elapsed duration as a growing block, not a vague spinner."
+        },
+        {
+          "from": "challenger-saville",
+          "raise": "The list stays quiet; only the open site is fully decoded."
+        }
+      ],
+      "html": ".impeccable/mocks/decision/assigned.html",
+      "comp": ".impeccable/mocks/decision/assigned.webp"
+    },
+    {
+      "id": "model-pick",
+      "label": "Household Binder",
+      "kicker": "IMPECCABLE’S PICK",
+      "lineage": "tabbed household record binders",
+      "thesis": "Each site is a labeled tab in a binder you already keep at home — open the page, do the next thing.",
+      "palette": ["#f2efe8", "#1e2430", "#0f5c57", "#c4a574"],
+      "materials": ["tab stock", "ring binder", "typed labels"],
+      "viewport": "Tabbed shell: Setup / Sites; first open lands on Setup with one primary path; Sites tab surfaces trust after backups exist.",
+      "risk": "Also the familiar direction most product-UI runs land on — Settings-adjacent comfort.",
+      "html": ".impeccable/mocks/decision/model-pick.html",
+      "comp": ".impeccable/mocks/decision/model-pick.webp"
+    },
+    {
+      "id": "challenger-split-flap",
+      "label": "Split-Flap Status",
+      "verdict": "competitive",
+      "lineage": "rail concourse split-flap boards",
+      "thesis": "Last run and restore confidence update like a departure board — one gaze tells you if you’re safe.",
+      "palette": ["#1a1c1e", "#f4f1ea", "#d4a017", "#b33a3a", "#8a9199"],
+      "materials": ["matte flap faces", "brushed steel frame", "amber delay lamps"],
+      "viewport": "Top Set up action; below, site rows as status lines (last run, confidence, next action) with a brief cascade when a run finishes.",
+      "case": "Beats Field Notebook on product clarity for status scanning; loses on audience ID for personal machine records.",
+      "risk": "Can costume the UI as an ops board if flaps own the layout instead of lending type, palette, density, and one update move.",
+      "html": ".impeccable/mocks/decision/challenger-split-flap.html",
+      "comp": ".impeccable/mocks/decision/challenger-split-flap.webp",
+      "hero": "https://impeccable.style/worlds/cards/signals-instruments-split-flap-concourse-hero.webp",
+      "board": "https://impeccable.style/worlds/cards/signals-instruments-split-flap-concourse.webp"
+    },
+    {
+      "id": "challenger-j-card",
+      "label": "Cassette J-Card",
+      "verdict": "declined",
+      "lineage": "mixtape j-cards",
+      "palette": ["#f7f5f0", "#1e3a6e", "#c41230", "#6b7280"],
+      "materials": ["lined inlay stock", "ballpoint blue"],
+      "case": "Side A / Side B maps setup vs trust cleverly, but backup operators don’t identify with mixtapes.",
+      "kept": "Hard sides for the two jobs — setup leads; trust is the other named half.",
+      "hero": "https://impeccable.style/worlds/cards/vernacular-ephemera-cassette-j-card-hero.webp"
+    },
+    {
+      "id": "challenger-botanical",
+      "label": "Botanical Folio",
+      "verdict": "declined",
+      "lineage": "seasonal botanical plates",
+      "palette": ["#f3ead8", "#3d5c3a", "#8c2f2f", "#6b6358"],
+      "materials": ["cream plate", "sepia rules"],
+      "case": "Life-stage sequence fits a wizard, but the audience isn’t botanical.",
+      "kept": "Fixed-scale stages — every setup step shares one frame.",
+      "hero": "https://impeccable.style/worlds/cards/editorial-sequence-montage-botanical-folio-season-hero.webp"
+    },
+    {
+      "id": "challenger-streaming",
+      "label": "Streaming Wall",
+      "verdict": "declined",
+      "lineage": "streaming title-card walls",
+      "palette": ["#121418", "#ffffff", "#3b82f6"],
+      "materials": ["poster tiles", "dimmed neighbors"],
+      "case": "Focus expansion is strong for site metadata, but the wall reads entertainment browsing, not minimum-hassle backup.",
+      "kept": "Expand-in-place for trust details.",
+      "hero": "https://impeccable.style/worlds/cards/pop-culture-shelf-streaming-title-card-wall-hero.webp"
+    },
+    {
+      "id": "challenger-labanotation",
+      "label": "Labanotation",
+      "verdict": "declined",
+      "lineage": "dance score notation",
+      "palette": ["#ffffff", "#111111", "#9ca3af"],
+      "materials": ["score paper", "symbol blocks"],
+      "case": "Duration-as-length is clear for progress, but notation fails audience identification for this product.",
+      "kept": "Progress as a growing duration block.",
+      "hero": "https://impeccable.style/worlds/cards/notation-diagram-systems-labanotation-hero.webp"
+    },
+    {
+      "id": "challenger-saville",
+      "label": "Factory Catalog",
+      "verdict": "declined",
+      "lineage": "Factory Records sleeve identity",
+      "palette": ["#0a0a0a", "#ffffff", "#e8452c", "#f5d64c"],
+      "materials": ["matte black", "pulsar plot"],
+      "case": "Coded minimalism fights minimum-hassle clarity.",
+      "kept": "Quiet list; one fully decoded active site.",
+      "hero": "https://impeccable.style/worlds/cards/brand-identity-canon-saville-catalog-sleeve-hero.webp"
+    }
+  ],
+  "reroll": {
+    "registers": ["safer", "bolder"]
+  },
+  "buildPath": {
+    "value": "code",
+    "toggle": false
+  },
+  "canon": true,
+  "canonCard": {
+    "label": "The category standard",
+    "thesis": "Clean backup admin: site list, status, setup wizard — executed at full craft, no WordPress-first story, local-only as a complete win.",
+    "palette": ["#ffffff", "#111827", "#0f766e"],
+    "materials": ["aligned grid", "system UI sans"],
+    "viewport": "Home with Set up a backup; site cards with last run and restore confidence.",
+    "risk": "Indistinguishable from generic backup dashboards by design.",
+    "html": ".impeccable/mocks/decision/canon.html",
+    "comp": ".impeccable/mocks/decision/canon.webp"
+  },
+  "steer": true
+}

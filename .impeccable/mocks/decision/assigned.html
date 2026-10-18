@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Local backup — Field Notebook</title>
+<style>
+  * { box-sizing: border-box; margin: 0; }
+  body {
+    width: 1440px; height: 900px; overflow: hidden;
+    background: #e6e2d6;
+    color: #2c3136;
+    font: 16px/1.4 "IBM Plex Sans", system-ui, sans-serif;
+    background-image: linear-gradient(#d9d4c6 1px, transparent 1px),
+      linear-gradient(90deg, #d9d4c6 1px, transparent 1px);
+    background-size: 24px 24px;
+  }
+  header {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 1.25rem 2.5rem; border-bottom: 2px solid #2c3136;
+    background: rgba(230, 226, 214, 0.92);
+  }
+  .brand { font-size: 1.35rem; font-weight: 600; letter-spacing: -0.02em; }
+  .brand span { color: #5c6b4a; font-weight: 400; font-size: 0.85rem; margin-left: 0.75rem; }
+  nav a { color: #2c3136; text-decoration: none; margin-left: 1.5rem; font-size: 0.95rem; }
+  nav a.primary {
+    background: #1a4f8b; color: #fff; padding: 0.55rem 1rem; border-radius: 4px;
+  }
+  main { padding: 2.5rem 2.5rem 0; max-width: 920px; }
+  h1 { font-size: 2rem; font-weight: 600; margin-bottom: 0.5rem; }
+  .lede { color: #4a5056; margin-bottom: 2rem; max-width: 36rem; }
+  .page {
+    border-left: 3px solid #1a4f8b; padding: 1.5rem 1.75rem;
+    background: rgba(255, 253, 248, 0.85);
+  }
+  .page h2 { font-size: 1.1rem; margin-bottom: 0.75rem; }
+  .page p { color: #4a5056; margin-bottom: 1.25rem; }
+  .actions { display: flex; gap: 0.75rem; align-items: center; }
+  .btn {
+    background: #1a4f8b; color: #fff; border: 0; padding: 0.7rem 1.1rem;
+    border-radius: 4px; font: inherit; font-weight: 500;
+  }
+  .btn.ghost { background: transparent; color: #1a4f8b; border: 1px solid #1a4f8b; }
+  .note {
+    margin-top: 1.5rem; font-size: 0.9rem; color: #5c6b4a;
+    border-top: 1px dashed #a8b09a; padding-top: 0.75rem;
+  }
+  .list { margin-top: 2rem; }
+  .row {
+    display: grid; grid-template-columns: 1fr auto auto; gap: 1rem;
+    align-items: center; padding: 0.85rem 0;
+    border-bottom: 1px solid #c9c4b6;
+  }
+  .row strong { font-weight: 600; }
+  .ok { color: #5c6b4a; font-size: 0.9rem; }
+  .stamp {
+    font-size: 0.8rem; border: 1px solid #5c6b4a; color: #5c6b4a;
+    padding: 0.2rem 0.45rem; border-radius: 2px; letter-spacing: 0.04em;
+  }
+</style>
+</head>
+<body>
+<header>
+  <div class="brand">Local backup <span>on this machine</span></div>
+  <nav>
+    <a href="#">Sites</a>
+    <a class="primary" href="#">Set up a backup</a>
+  </nav>
+</header>
+<main>
+  <h1>Back up files with less fuss</h1>
+  <p class="lede">Point at a directory or a server. Matching site types apply automatically; everything else is files. Local-only is a complete backup until you enable another place.</p>
+  <div class="page">
+    <h2>Next</h2>
+    <p>No sites yet. Start with one path on this computer, or one server. Nothing uploads unless you turn on a destination later.</p>
+    <div class="actions">
+      <button class="btn">Set up a backup</button>
+      <button class="btn ghost">Open an existing site</button>
+    </div>
+    <p class="note">Margin: restore confidence appears here after a scratch restore passes.</p>
+  </div>
+  <div class="list" aria-hidden="true">
+    <div class="row">
+      <div><strong>docs-archive</strong> · files</div>
+      <span class="ok">Last run OK · 2h ago</span>
+      <span class="stamp">RESTORE 14 Oct</span>
+    </div>
+  </div>
+</main>
+</body>
+</html>

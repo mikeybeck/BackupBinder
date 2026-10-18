@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Local backup — Category standard</title>
+<style>
+  * { box-sizing: border-box; margin: 0; }
+  body {
+    width: 1440px; height: 900px; overflow: hidden;
+    background: #f8fafc; color: #111827;
+    font: 16px/1.45 system-ui, sans-serif;
+  }
+  header {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 1rem 2rem; background: #fff; border-bottom: 1px solid #e5e7eb;
+  }
+  .brand { font-weight: 700; }
+  .btn {
+    background: #0f766e; color: #fff; border: 0; border-radius: 6px;
+    padding: 0.6rem 1rem; font: inherit; font-weight: 600; text-decoration: none;
+  }
+  main { padding: 2rem; max-width: 960px; }
+  h1 { font-size: 1.6rem; margin-bottom: 0.35rem; }
+  .lede { color: #6b7280; margin-bottom: 1.5rem; }
+  .grid { display: grid; gap: 1rem; }
+  .card {
+    background: #fff; border: 1px solid #e5e7eb; border-radius: 8px; padding: 1.25rem;
+  }
+  .card h2 { font-size: 1.1rem; }
+  .meta { color: #6b7280; font-size: 0.9rem; margin: 0.35rem 0 0.75rem; }
+  .ok { color: #047857; font-size: 0.9rem; }
+</style>
+</head>
+<body>
+<header>
+  <div class="brand">Local backup</div>
+  <a class="btn" href="#">Set up a backup</a>
+</header>
+<main>
+  <h1>Sites</h1>
+  <p class="lede">Backups stay on this machine unless you enable another destination. Site types are addons; unmatched paths are files-only.</p>
+  <div class="grid">
+    <div class="card">
+      <h2>docs-archive</h2>
+      <p class="meta">files · /home/you/docs</p>
+      <p class="ok">Last backup succeeded · Restore confidence: 14 Oct</p>
+    </div>
+    <div class="card">
+      <h2>Set up a backup</h2>
+      <p class="meta">Directory or server. Local-only is complete.</p>
+      <a class="btn" href="#">Get started</a>
+    </div>
+  </div>
+</main>
+</body>
+</html>

@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Local backup — Split-Flap Status</title>
+<style>
+  * { box-sizing: border-box; margin: 0; }
+  body {
+    width: 1440px; height: 900px; overflow: hidden;
+    background: #8a9199; color: #f4f1ea;
+    font: 15px/1.35 "IBM Plex Sans Condensed", "Arial Narrow", sans-serif;
+  }
+  .frame {
+    margin: 1.5rem; background: #1a1c1e; border: 8px solid #6d737a;
+    border-radius: 4px; height: calc(900px - 3rem); padding: 1.25rem 1.5rem;
+  }
+  header {
+    display: flex; justify-content: space-between; align-items: baseline;
+    margin-bottom: 1.25rem; padding-bottom: 0.75rem; border-bottom: 1px solid #3a3f44;
+  }
+  .brand { font-size: 1.4rem; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; }
+  .cta {
+    background: #f4f1ea; color: #1a1c1e; padding: 0.55rem 1rem;
+    text-decoration: none; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase;
+  }
+  .cols {
+    display: grid; grid-template-columns: 2fr 1.2fr 1.2fr 1fr;
+    gap: 0.5rem; color: #8a9199; font-size: 0.75rem; letter-spacing: 0.08em;
+    text-transform: uppercase; margin-bottom: 0.5rem; padding: 0 0.5rem;
+  }
+  .row {
+    display: grid; grid-template-columns: 2fr 1.2fr 1.2fr 1fr;
+    gap: 0.5rem; align-items: center;
+    background: #0e1012; margin-bottom: 0.35rem; padding: 0.65rem 0.5rem;
+    border-left: 3px solid #3a3f44;
+  }
+  .row.ok { border-left-color: #5c6b4a; }
+  .row.warn { border-left-color: #d4a017; }
+  .row.bad { border-left-color: #b33a3a; }
+  .cell { font-size: 1.05rem; letter-spacing: 0.04em; text-transform: uppercase; }
+  .amber { color: #d4a017; }
+  .red { color: #b33a3a; }
+  .muted { color: #8a9199; font-size: 0.9rem; text-transform: none; letter-spacing: 0; }
+  .empty {
+    margin-top: 2rem; padding: 1.5rem; border: 1px dashed #3a3f44; text-align: center;
+  }
+  .empty p { color: #8a9199; margin-bottom: 1rem; }
+</style>
+</head>
+<body>
+<div class="frame">
+  <header>
+    <div class="brand">Local backup</div>
+    <a class="cta" href="#">Set up a backup</a>
+  </header>
+  <div class="cols">
+    <span>Site</span><span>Last run</span><span>Restore</span><span>Next</span>
+  </div>
+  <div class="row ok">
+    <div class="cell">docs-archive · files</div>
+    <div class="cell">OK · 2H</div>
+    <div class="cell">PASSED 14 OCT</div>
+    <div class="cell muted">Run again</div>
+  </div>
+  <div class="row warn">
+    <div class="cell">shop-mirror · files</div>
+    <div class="cell amber">RUNNING 34%</div>
+    <div class="cell muted">—</div>
+    <div class="cell muted">Wait</div>
+  </div>
+  <div class="row bad">
+    <div class="cell">remote-notes · sftp</div>
+    <div class="cell red">FAILED</div>
+    <div class="cell muted">NEVER</div>
+    <div class="cell muted">Explain</div>
+  </div>
+  <div class="empty">
+    <p>No sites yet — local-only is enough. Destinations stay optional.</p>
+    <a class="cta" href="#">Set up a backup</a>
+  </div>
+</div>
+</body>
+</html>
