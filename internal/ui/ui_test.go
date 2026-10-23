@@ -25,7 +25,7 @@ func TestRunningBackupIsVisible(t *testing.T) {
 		t.Fatal(err)
 	}
 	body := site.String()
-	for _, want := range []string{"Backup in progress since 2026-09-30T00:00:00Z", "Backup in progress…", `http-equiv="refresh"`, "disabled"} {
+	for _, want := range []string{"Backup in progress since 2026-09-30T00:00:00Z", "Backup in progress…", `http-equiv="refresh"`, "disabled", `id="backup-progress"`, `role="progressbar"`} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("site page missing %q", want)
 		}
@@ -55,7 +55,7 @@ func TestRunningBackupShowsProgress(t *testing.T) {
 		t.Fatal(err)
 	}
 	body := site.String()
-	for _, want := range []string{`role="progressbar"`, `aria-valuenow="27"`, `style="width: 27%"`, "Saving the archive", "wp-content/uploads/note.txt", "10 of 10 files", "27.4 MiB written", "Upload limited to 100 KiB/s"} {
+	for _, want := range []string{`role="progressbar"`, `aria-valuenow="27"`, `style="width: 27%"`, "progress-pct", "27%", "Saving the archive", "wp-content/uploads/note.txt", "10 of 10 files", "27.4 MiB written", "Upload limited to 100 KiB/s"} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("site page missing %q\n%s", want, body)
 		}
@@ -70,6 +70,76 @@ func TestRunningBackupShowsProgress(t *testing.T) {
 	}
 	if !strings.Contains(home.String(), "Reading site files") || !strings.Contains(home.String(), "bar unknown") {
 		t.Fatal(home.String())
+	}
+}
+
+func TestWatchModePollsProgress(t *testing.T) {
+	tmpl := template.Must(template.New("page").Parse(pageHTML))
+	var site bytes.Buffer
+	err := tmpl.ExecuteTemplate(&site, "site", page{
+		Watch: true,
+		Site: &siteView{
+			ID: "demo", Name: "Demo", Status: "none", Confidence: "never",
+			Progress: progressView{Phase: "Starting the backup"},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := site.String()
+	for _, want := range []string{`data-progress-url="/sites/demo/progress"`, "data-progress-phase", "fetch(progressURL", "Starting the backup"} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("missing %q", want)
+		}
+	}
+	if strings.Contains(body, `http-equiv="refresh"`) {
+		t.Fatal("watch mode should poll instead of full-page refresh")
+	}
+}
+
+func TestStoredBackupsSectionRenders(t *testing.T) {
+	tmpl := template.Must(template.New("page").Parse(pageHTML))
+	var withList bytes.Buffer
+	err := tmpl.ExecuteTemplate(&withList, "site", page{
+		Site: &siteView{
+			ID: "demo", Name: "Demo", Status: "success", When: "2026-01-02T00:00:00Z",
+			Size: "80 bytes", Confidence: "checked", LocalRepo: "/home/demo/restic/demo",
+			Backups: []backupRow{
+				{When: "2026-01-02T00:00:00Z", Size: "80 bytes", Confidence: "checked"},
+				{When: "2026-01-01T00:00:00Z", Size: "40 bytes", Confidence: "never"},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := withList.String()
+	for _, want := range []string{
+		"<h3>Stored backups on this machine</h3>",
+		"Local restic repository:",
+		"/home/demo/restic/demo",
+		"Destinations below are separate copies",
+		"2026-01-02T00:00:00Z · 80 bytes · Restore checked",
+		"2026-01-01T00:00:00Z · 40 bytes · Restore never",
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("missing %q\n%s", want, body)
+		}
+	}
+	if strings.Contains(body, "None yet in the local repository.") {
+		t.Fatal("empty copy shown with backups")
+	}
+
+	var empty bytes.Buffer
+	err = tmpl.ExecuteTemplate(&empty, "site", page{
+		Site: &siteView{ID: "demo", Name: "Demo", Status: "none", Confidence: "never", LocalRepo: "/tmp/restic/demo"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	emptyBody := empty.String()
+	if !strings.Contains(emptyBody, "Stored backups on this machine") || !strings.Contains(emptyBody, "None yet in the local repository.") {
+		t.Fatal(emptyBody)
 	}
 }
 
@@ -206,7 +276,7 @@ func TestDestinationFormOffersGoogleDrive(t *testing.T) {
 		Site: &siteView{ID: "demo", Name: "Demo", Status: "none", Root: "/tmp/copy"},
 		DestKinds: []destKindView{
 			{ID: "gdrive", Label: "Google Drive", Note: "uses rclone", Fields: []destFieldView{
-				{Name: "host", Label: "rclone remote name", Placeholder: "gdrive"},
+				{Name: "host", Label: "Google Drive remote", Placeholder: "gdrive", Choices: []string{"gdrive"}},
 				{Name: "path", Label: "Folder in Google Drive", Placeholder: "local-backup/site"},
 			}},
 		},
@@ -216,8 +286,8 @@ func TestDestinationFormOffersGoogleDrive(t *testing.T) {
 	}
 	body := buf.String()
 	for _, want := range []string{
-		`value="gdrive"`, `data-for="gdrive"`, "rclone remote name", "Folder in Google Drive",
-		`input.disabled = !show`, "destinations/",
+		`value="gdrive"`, `data-for="gdrive"`, "Google Drive remote", "Folder in Google Drive",
+		`id="dest-gdrive-host"`, `Choose a remote`, `input.disabled = !show`, "destinations/",
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("missing %q", want)

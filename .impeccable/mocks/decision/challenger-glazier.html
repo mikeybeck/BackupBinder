@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<title>BackupBinder — Glazier</title>
+<link href="https://fonts.googleapis.com/css2?family=Schibsted+Grotesk:wght@500;700;800&display=swap" rel="stylesheet"/>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{width:1440px;height:900px;overflow:hidden;font-family:"Schibsted Grotesk",system-ui,sans-serif;background:#0e0f12;color:#e8eef2}
+  .wall{display:grid;grid-template-columns:1.2fr 1fr 1fr;grid-template-rows:72px 1fr 120px;gap:10px;height:100%;padding:16px;background:#0e0f12}
+  .bar{background:#0e0f12}
+  .pane{background:#dfe6ec;color:#0e0f12;border:10px solid #0e0f12;display:flex;flex-direction:column;justify-content:center;padding:28px;box-shadow:inset 0 0 40px rgba(255,255,255,.35)}
+  .nav{grid-column:1/-1;display:grid;grid-template-columns:repeat(4,1fr);gap:10px}
+  .nav a{background:#c5ced6;color:#0e0f12;text-decoration:none;font-size:13px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;display:flex;align-items:center;justify-content:center;border:10px solid #0e0f12}
+  .hero{grid-column:1/2;background:#1a4f8b;color:#e8eef2;box-shadow:inset 0 0 60px rgba(255,255,255,.12)}
+  .brand{font-size:40px;font-weight:800;letter-spacing:-.03em}
+  .sub{font-size:14px;opacity:.85;margin:8px 0 24px}
+  h1{font-size:36px;font-weight:800;line-height:1.15;max-width:14ch;margin-bottom:16px}
+  .lede{font-size:16px;line-height:1.35;max-width:28ch;margin-bottom:24px;opacity:.92}
+  .cta{align-self:flex-start;background:#e8eef2;color:#0e0f12;font-weight:800;padding:12px 18px;text-decoration:none;border:3px solid #0e0f12}
+  .side{font-size:15px;font-weight:700;line-height:1.35}
+  .side span{display:block;font-weight:500;font-size:13px;margin-top:8px;opacity:.75}
+  .band{grid-column:1/-1;display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+  .band div{background:#c5ced6;color:#0e0f12;border:10px solid #0e0f12;padding:18px 22px;font-size:13px;font-weight:700;text-transform:uppercase;letter-spacing:.05em}
+</style>
+</head>
+<body>
+  <div class="wall">
+    <nav class="nav">
+      <a href="#">BackupBinder</a>
+      <a href="#">How it works</a>
+      <a href="#">Trust</a>
+      <a href="#">Get started</a>
+    </nav>
+    <section class="pane hero">
+      <div class="brand">BackupBinder</div>
+      <p class="sub">Site backups on this machine</p>
+      <h1>Keep a site archive you can actually restore.</h1>
+      <p class="lede">Local-first backups for any directory. Optional remotes. Same contract for you and your agent.</p>
+      <a class="cta" href="#start">Get started</a>
+    </section>
+    <div class="pane side">Last run<span>On this machine</span></div>
+    <div class="pane side">Restore<span>Empty scratch only</span></div>
+    <div class="band">
+      <div>Sites → local archive</div>
+      <div>Optional destinations</div>
+      <div>Restore confidence</div>
+    </div>
+  </div>
+</body>
+<!-- round a6b19ae7 -->
+</html>

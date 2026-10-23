@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"local-backup/internal/archive"
 	"local-backup/internal/capture"
 	"local-backup/internal/destination"
 	"local-backup/internal/discover"
@@ -88,12 +89,17 @@ func (a *App) CreateBackup(siteID string) (model.Manifest, error) {
 	note.set(model.Progress{Phase: "Starting the backup"}, true)
 	if site.Location.Kind == "sftp" {
 		label := site.Location.User + "@" + site.Location.Host + ":" + site.Location.Path
+		phase := "Copying files from the server"
 		if err := syncServer(site.Location, site.Root, func(attempt int) {
-			phase := "Copying files from the server"
+			phase = "Copying files from the server"
 			if attempt > 1 {
 				phase = "Copying files from the server, attempt " + strconv.Itoa(attempt)
 			}
 			note.set(model.Progress{Phase: phase, File: label}, true)
+		}, func(percent int, detail string) {
+			note.set(model.Progress{
+				Phase: phase, File: label, PercentKnown: true, Percent: float64(percent),
+			}, true)
 		}); err != nil {
 			return model.Manifest{}, a.failRun(site.ID, runID, started, err, nil)
 		}
@@ -128,7 +134,7 @@ func (a *App) CreateBackup(siteID string) (model.Manifest, error) {
 		db = &report
 	}
 	note.set(model.Progress{
-		Phase: "Reading site files", FilesTotal: int64(estimate.FileCount), BytesTotal: estimate.ByteSize,
+		Phase: "Reading site files", FilesDone: 0, FilesTotal: int64(estimate.FileCount), BytesTotal: estimate.ByteSize,
 	}, true)
 	files, err := capture.StageFiles(site.Root, filepath.Join(payload, "files"), excludes, func(rel string, n int) {
 		note.set(model.Progress{
@@ -149,7 +155,9 @@ func (a *App) CreateBackup(siteID string) (model.Manifest, error) {
 		return model.Manifest{}, a.failRun(site.ID, runID, started, err, secrets)
 	}
 	restic := a.resticFor(site)
-	note.set(model.Progress{Phase: "Archiving"}, true)
+	note.set(model.Progress{
+		Phase: "Archiving", FilesTotal: int64(files.FileCount), BytesTotal: files.ByteSize,
+	}, true)
 	if err := restic.EnsureRepo(repo, password); err != nil {
 		return model.Manifest{}, a.failRun(site.ID, runID, started, err, secrets)
 	}
@@ -157,7 +165,7 @@ func (a *App) CreateBackup(siteID string) (model.Manifest, error) {
 	if err != nil {
 		return model.Manifest{}, a.failRun(site.ID, runID, started, err, secrets)
 	}
-	destinations, warnings := a.publish(site, repo, password, snapshotID, note)
+	destinations, warnings := a.publish(site, repo, password, snapshotID, files.ByteSize, note)
 	manifest = a.buildManifest(site, runID, started, files, db, repo, password, snapshotID, added, destinations, warnings)
 	if err := writePrivateJSON(a.manifestPath(site.ID, runID), manifest); err != nil {
 		return model.Manifest{}, a.failRun(site.ID, runID, started, err, secrets)
@@ -244,7 +252,7 @@ func limitFlags(limits model.Limits) string {
 	return flags
 }
 
-func (a *App) publish(site model.Site, repo, password, snapshotID string, note *progressWriter) ([]model.DestResult, []string) {
+func (a *App) publish(site model.Site, repo, password, snapshotID string, bytesHint int64, note *progressWriter) ([]model.DestResult, []string) {
 	var results []model.DestResult
 	var warnings []string
 	for _, dest := range site.Destinations {
@@ -287,14 +295,14 @@ func (a *App) publish(site model.Site, repo, password, snapshotID string, note *
 			continue
 		}
 		env := loadEnvFile(dest.CredentialFile)
+		phase := kind.ProgressLabel(dest)
+		var onStatus func(archive.Status)
 		if note != nil {
-			note.set(model.Progress{Phase: kind.ProgressLabel(dest)}, true)
+			note.set(model.Progress{Phase: phase, BytesTotal: bytesHint}, true)
+			onStatus = note.onCopy(phase, bytesHint)
 		}
-		var globalOpts []string
-		if rclone, err := kind.RcloneProgram(); err == nil && rclone != "" {
-			globalOpts = append(globalOpts, "-o", "rclone.program="+rclone)
-		}
-		if err := a.resticFor(site).Copy(repo, password, target, snapshotID, env, globalOpts...); err != nil {
+		globalOpts := kind.RcloneGlobalOpts()
+		if err := a.resticFor(site).Copy(repo, password, target, snapshotID, env, onStatus, globalOpts...); err != nil {
 			message := formatDestFailure(err)
 			results = append(results, model.DestResult{ID: dest.ID, Kind: dest.Kind, Status: "failed", Offsite: offsite, URL: target, Reason: message})
 			warnings = append(warnings, message)
@@ -375,6 +383,7 @@ func (a *App) AddDestination(siteID string, dest model.Destination, accessKey, s
 	if err != nil {
 		return dest, err
 	}
+	kind.ApplyDefaults(&dest)
 	if err := kind.Validate(site, a.repoPath(site), dest); err != nil {
 		return dest, err
 	}
@@ -484,16 +493,16 @@ func (a *App) checkEnabledDestinations(site model.Site) error {
 			return err
 		}
 		if err := kind.Validate(site, repo, dest); err != nil {
-			return err
+			return fail.New("bad_destination", "Destination "+dest.ID+" cannot be used. "+err.Error())
 		}
 		if missing := kind.Missing(dest); len(missing) > 0 {
-			continue
+			return fail.New("bad_destination", "Destination "+dest.ID+" cannot be used: missing "+strings.Join(missing, ", ")+".")
 		}
 		if kind.NeedsCredentials() && dest.CredentialFile == "" {
-			continue
+			return fail.New("bad_destination", "Destination "+dest.ID+" is enabled but credentials are missing.")
 		}
 		if err := kind.CheckAccess(dest, true); err != nil {
-			return err
+			return fail.New("bad_destination", "Destination "+dest.ID+" cannot be used. "+err.Error())
 		}
 	}
 	return nil

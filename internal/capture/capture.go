@@ -228,8 +228,8 @@ func Database(site model.Site, output, secretDir string) (model.DBCapture, []str
 		matched = addon.Addon{}
 	}
 	if site.Location.Kind == "sftp" {
-		if matched.ID == "" {
-			return model.DBCapture{}, nil, fail.New("step_failed", "A server database dump needs a matching site addon.")
+		if matched.ID == "" && (source.Name == "" || source.User == "") {
+			return model.DBCapture{}, nil, fail.New("step_failed", "A server database dump needs a matching site addon, or a saved database name and user.")
 		}
 		return databaseOnServer(site, matched, output, secretDir)
 	}

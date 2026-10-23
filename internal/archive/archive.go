@@ -9,10 +9,12 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"regexp"
 	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
+	"syscall"
 	"time"
 
 	"local-backup/internal/destination"
@@ -69,6 +71,38 @@ type backupLine struct {
 	Item         string   `json:"item"`
 	SnapshotID   string   `json:"snapshot_id"`
 	DataAdded    int64    `json:"data_added"`
+}
+
+// copyProgressLine matches restic copy terminal progress, e.g. "[0:12] 75.00%  3 / 4 packs copied".
+var copyProgressLine = regexp.MustCompile(`(\d+(?:\.\d+)?)%\s+(\d+)\s*/\s*(\d+)\s+packs?\s+copied`)
+
+// ParseCopyLine reads one progress line from restic copy stdout. Percent is 0–1.
+func ParseCopyLine(line string) (Status, bool) {
+	line = strings.TrimSpace(line)
+	m := copyProgressLine.FindStringSubmatch(line)
+	if len(m) != 4 {
+		return Status{}, false
+	}
+	pct, err := strconv.ParseFloat(m[1], 64)
+	if err != nil {
+		return Status{}, false
+	}
+	done, err1 := strconv.ParseInt(m[2], 10, 64)
+	total, err2 := strconv.ParseInt(m[3], 10, 64)
+	if err1 != nil || err2 != nil || total <= 0 {
+		return Status{}, false
+	}
+	if pct < 0 {
+		pct = 0
+	}
+	if pct > 100 {
+		pct = 100
+	}
+	return Status{
+		HasPercent: true, Percent: pct / 100,
+		FilesDone: done, FilesTotal: total, HasFiles: true,
+		File: strconv.FormatInt(done, 10) + " of " + strconv.FormatInt(total, 10) + " packs",
+	}, true
 }
 
 // ParseBackupLine reads one JSON line from restic backup. ok is false for lines that are not progress.
@@ -195,6 +229,14 @@ func (r Runner) Forget(repo, passwordFile string, extraEnv []string, siteID stri
 	}
 	args := append(append([]string{}, globalOpts...), "forget", "--json", "--group-by", "host", "--host", "local-backup", "--tag", "site="+siteID)
 	args = append(args, policy.ForgetArgs()...)
+	outcome, err := r.forgetOnce(repo, passwordFile, extraEnv, args...)
+	if err != nil && clearStaleLock(r, repo, passwordFile, extraEnv, err, globalOpts...) {
+		outcome, err = r.forgetOnce(repo, passwordFile, extraEnv, args...)
+	}
+	return outcome, err
+}
+
+func (r Runner) forgetOnce(repo, passwordFile string, extraEnv []string, args ...string) (ForgetOutcome, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Hour)
 	defer cancel()
 	stdout, stderr, code, err := r.run(ctx, repo, passwordFile, extraEnv, nil, args...)
@@ -202,7 +244,7 @@ func (r Runner) Forget(repo, passwordFile string, extraEnv []string, siteID stri
 		return ForgetOutcome{}, err
 	}
 	if code != 0 {
-		return ForgetOutcome{}, &fail.Error{Code: "step_failed", Message: "restic forget failed.", Step: "retention", ExitCode: fail.ExitCode(code), Stderr: tail(stderr + stdout), Hint: "Snapshots were not removed. The latest backup is still stored."}
+		return ForgetOutcome{}, &fail.Error{Code: "step_failed", Message: "restic forget failed.", Step: "retention", ExitCode: fail.ExitCode(code), Stderr: tail(stderr + stdout), Hint: retentionLockHint(stderr + stdout)}
 	}
 	outcome, err := ParseForget(stdout)
 	if err != nil {
@@ -253,6 +295,14 @@ func runTag(tags []string) string {
 
 // Prune deletes repository data that no snapshot references.
 func (r Runner) Prune(repo, passwordFile string, extraEnv []string, globalOpts ...string) error {
+	err := r.pruneOnce(repo, passwordFile, extraEnv, globalOpts...)
+	if err != nil && clearStaleLock(r, repo, passwordFile, extraEnv, err, globalOpts...) {
+		err = r.pruneOnce(repo, passwordFile, extraEnv, globalOpts...)
+	}
+	return err
+}
+
+func (r Runner) pruneOnce(repo, passwordFile string, extraEnv []string, globalOpts ...string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Hour)
 	defer cancel()
 	args := append(append([]string{}, globalOpts...), "prune")
@@ -261,9 +311,84 @@ func (r Runner) Prune(repo, passwordFile string, extraEnv []string, globalOpts .
 		return err
 	}
 	if code != 0 {
-		return &fail.Error{Code: "step_failed", Message: "restic prune failed.", Step: "retention", ExitCode: fail.ExitCode(code), Stderr: tail(stderr), Hint: "The snapshots are already forgotten. The next backup will try to free the space."}
+		return &fail.Error{Code: "step_failed", Message: "restic prune failed.", Step: "retention", ExitCode: fail.ExitCode(code), Stderr: tail(stderr), Hint: retentionLockHint(stderr)}
 	}
 	return nil
+}
+
+// Unlock removes restic repository locks.
+func (r Runner) Unlock(repo, passwordFile string, extraEnv []string, globalOpts ...string) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
+	args := append(append([]string{}, globalOpts...), "unlock")
+	_, stderr, code, err := r.run(ctx, repo, passwordFile, extraEnv, nil, args...)
+	if err != nil {
+		return err
+	}
+	if code != 0 {
+		return &fail.Error{Code: "step_failed", Message: "restic unlock failed.", Step: "retention", ExitCode: fail.ExitCode(code), Stderr: tail(stderr), Hint: "Remove the leftover lock manually if no backup is running."}
+	}
+	return nil
+}
+
+var lockedByPID = regexp.MustCompile(`(?i)locked by PID\s+(\d+)`)
+
+func clearStaleLock(r Runner, repo, passwordFile string, extraEnv []string, err error, globalOpts ...string) bool {
+	if !isRepoLocked(err) || !lockHolderGone(err) {
+		return false
+	}
+	return r.Unlock(repo, passwordFile, extraEnv, globalOpts...) == nil
+}
+
+// IsRepoLocked reports whether err is a restic exclusive-lock conflict.
+func IsRepoLocked(err error) bool {
+	text := strings.ToLower(errText(err))
+	return strings.Contains(text, "already locked") || strings.Contains(text, "repository is already locked")
+}
+
+func isRepoLocked(err error) bool { return IsRepoLocked(err) }
+
+func lockHolderGone(err error) bool {
+	m := lockedByPID.FindStringSubmatch(errText(err))
+	if len(m) != 2 {
+		// No PID in the message: only clear locks that look abandoned by age wording is risky.
+		// Prefer unlocking when restic says the lock is old and we cannot see a holder.
+		return strings.Contains(strings.ToLower(errText(err)), "ago")
+	}
+	pid, convErr := strconv.Atoi(m[1])
+	if convErr != nil || pid <= 0 {
+		return false
+	}
+	return !pidAlive(pid)
+}
+
+func pidAlive(pid int) bool {
+	proc, err := os.FindProcess(pid)
+	if err != nil {
+		return false
+	}
+	return proc.Signal(syscall.Signal(0)) == nil
+}
+
+func errText(err error) string {
+	if err == nil {
+		return ""
+	}
+	text := err.Error()
+	if fe, ok := err.(*fail.Error); ok {
+		text += " " + fe.Stderr + " " + fe.Hint
+	}
+	return text
+}
+
+func retentionLockHint(stderr string) string {
+	if isRepoLocked(&fail.Error{Stderr: stderr}) {
+		if lockHolderGone(&fail.Error{Stderr: stderr}) {
+			return "A leftover restic lock blocked retention. It should clear on the next run. The latest backup is still stored."
+		}
+		return "Another restic process still holds the repository lock. Wait for it to finish, then apply retention again. The latest backup is still stored."
+	}
+	return "Snapshots were not removed. The latest backup is still stored."
 }
 
 // List returns snapshot paths that start with /.
@@ -302,26 +427,110 @@ func (r Runner) Restore(repo, passwordFile, snapshotID, target string) error {
 
 // Copy copies one snapshot into another repository. The destination is initialized first.
 // globalOpts are restic global flags placed before the subcommand (for example -o rclone.program=...).
-func (r Runner) Copy(sourceRepo, passwordFile, destURL, snapshotID string, extraEnv []string, globalOpts ...string) error {
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Hour)
+// onStatus receives pack-copy percent updates when restic prints progress; it may be nil.
+// Google Drive query-quota failures retry a few times with backoff (limits recover per minute).
+func (r Runner) Copy(sourceRepo, passwordFile, destURL, snapshotID string, extraEnv []string, onStatus func(Status), globalOpts ...string) error {
+	ctx, cancel := context.WithTimeout(context.Background(), r.copyTimeout())
 	defer cancel()
 	initArgs := append(append([]string{}, globalOpts...), "init", "--copy-chunker-params", "--from-repo", sourceRepo, "--from-password-file", passwordFile)
 	_, stderr, code, err := r.run(ctx, destURL, passwordFile, extraEnv, nil, initArgs...)
 	if err != nil {
-		return err
+		return destinationTimeoutError(destURL, "initialize", err, stderr)
 	}
 	if code != 0 && !strings.Contains(strings.ToLower(stderr), "already") {
 		return destinationCopyError(destURL, "initialize", stderr)
 	}
 	copyArgs := append(append([]string{}, globalOpts...), "copy", "--from-repo", sourceRepo, "--from-password-file", passwordFile, snapshotID)
-	_, stderr, code, err = r.run(ctx, destURL, passwordFile, extraEnv, nil, copyArgs...)
-	if err != nil {
+	env := extraEnv
+	var onLine func(string)
+	var onStart func(int)
+	if onStatus != nil {
+		env = withProgressFPS(extraEnv)
+		var resticPID atomic.Int64
+		onStart = func(pid int) { resticPID.Store(int64(pid)) }
+		onLine = func(line string) {
+			for _, part := range strings.FieldsFunc(line, func(r rune) bool { return r == '\r' }) {
+				st, ok := ParseCopyLine(part)
+				if !ok {
+					continue
+				}
+				st.WrittenBytes = ReadWriteBytes(int(resticPID.Load()))
+				onStatus(st)
+			}
+		}
+	}
+	backoffs := []time.Duration{90 * time.Second, 3 * time.Minute, 5 * time.Minute}
+	for attempt := 0; ; attempt++ {
+		_, stderr, code, err = r.runIn(ctx, "", destURL, passwordFile, env, onLine, onStart, copyArgs...)
+		if err != nil {
+			return destinationTimeoutError(destURL, "copy", err, stderr)
+		}
+		if code == 0 {
+			return nil
+		}
+		if attempt >= len(backoffs) || !isDriveQuotaError(strings.ToLower(stderr)) {
+			return destinationCopyError(destURL, "copy", stderr)
+		}
+		if err := sleepCtx(ctx, backoffs[attempt]); err != nil {
+			return destinationTimeoutError(destURL, "copy", &fail.Error{
+				Code: "destination_failed", Message: "The rclone destination " + destURL + " copy timed out.",
+			}, stderr)
+		}
+	}
+}
+
+// withProgressFPS asks restic to emit copy progress lines even when stdout is not a TTY.
+func withProgressFPS(extra []string) []string {
+	for _, item := range extra {
+		if strings.HasPrefix(item, "RESTIC_PROGRESS_FPS=") {
+			return extra
+		}
+	}
+	return append(append([]string{}, extra...), "RESTIC_PROGRESS_FPS=2")
+}
+
+func sleepCtx(ctx context.Context, d time.Duration) error {
+	timer := time.NewTimer(d)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-timer.C:
+		return nil
+	}
+}
+
+// copyTimeout is long enough for a large offsite copy even when upload is rate-limited.
+// At 100 KiB/s, 2 hours only moves ~700 MiB; multi-gigabyte Drive copies need more time.
+func (r Runner) copyTimeout() time.Duration {
+	const min = 2 * time.Hour
+	const max = 24 * time.Hour
+	if r.LimitUpload <= 0 {
+		return min
+	}
+	// Budget for about 16 GiB at the configured upload cap, plus headroom.
+	seconds := (16 * 1024 * 1024) / r.LimitUpload
+	d := time.Duration(seconds) * time.Second
+	if d < min {
+		return min
+	}
+	if d > max {
+		return max
+	}
+	return d
+}
+
+func destinationTimeoutError(destURL, op string, err error, stderr string) error {
+	fe, ok := err.(*fail.Error)
+	if !ok || fe == nil || !strings.Contains(strings.ToLower(fe.Message), "timed out") {
 		return err
 	}
-	if code != 0 {
-		return destinationCopyError(destURL, "copy", stderr)
+	message := "The rclone destination " + destURL + " " + op + " timed out."
+	hint := "The local snapshot is already stored. A low upload speed limit can make Google Drive copies take many hours; raise or clear the site upload limit, then back up again."
+	if detail := firstUsefulLine(stderr); detail != "" {
+		message += " " + detail
 	}
-	return nil
+	return &fail.Error{Code: "destination_failed", Message: message, Step: "destination", Stderr: tail(stderr), Hint: hint}
 }
 
 func destinationCopyError(destURL, op, stderr string) error {
@@ -352,6 +561,9 @@ func rcloneDestinationHint(destURL, op, stderr string) (string, string) {
 		}
 		return "Google Drive / rclone remote " + quote(name) + " is not configured.",
 			"Run rclone config and create a Google Drive remote named " + quote(name) + ". Then back up again. The local snapshot is already stored."
+	case isDriveQuotaError(lower):
+		return "Google Drive rate-limited the " + op + " to " + destURL + " (API queries per minute).",
+			"Wait about 15 minutes, then back up again — the local snapshot is already stored. If this keeps happening, set your own Google client_id in the rclone remote (rclone config edit " + quote(remote) + ") instead of the shared rclone client."
 	case strings.Contains(lower, "failed to create file system"):
 		return "rclone could not open " + destURL + ".",
 			"Check that rclone remote " + quote(remote) + " exists (rclone listremotes) and the folder path is correct. The local snapshot is already stored."
@@ -385,6 +597,14 @@ func splitRcloneURL(destURL string) (remote, path string) {
 	return remote, path
 }
 
+func isDriveQuotaError(lowerStderr string) bool {
+	return strings.Contains(lowerStderr, "quota exceeded") ||
+		strings.Contains(lowerStderr, "ratelimitexceeded") ||
+		strings.Contains(lowerStderr, "userratelimitexceeded") ||
+		strings.Contains(lowerStderr, "rate limit") ||
+		(strings.Contains(lowerStderr, "403") && strings.Contains(lowerStderr, "queries"))
+}
+
 func quote(s string) string {
 	if s == "" {
 		return s
@@ -393,20 +613,31 @@ func quote(s string) string {
 }
 
 func firstUsefulLine(stderr string) string {
+	var fallback string
 	for _, line := range strings.Split(stderr, "\n") {
 		line = strings.TrimSpace(line)
 		if line == "" {
 			continue
 		}
 		lower := strings.ToLower(line)
-		if strings.HasPrefix(lower, "rclone:") || strings.Contains(lower, "fatal") || strings.Contains(lower, "error") || strings.Contains(lower, "failed") || strings.Contains(lower, "critical") {
+		// rclone NOTICE/INFO lines are warnings, not the failure cause.
+		if strings.Contains(lower, " notice:") || strings.Contains(lower, " info:") {
+			continue
+		}
+		if strings.Contains(lower, "fatal") || strings.Contains(lower, "error") || strings.Contains(lower, "failed") || strings.Contains(lower, "critical") || strings.Contains(lower, "timed out") {
 			if len(line) > 240 {
 				return line[:240]
 			}
 			return line
 		}
+		if fallback == "" && strings.HasPrefix(lower, "rclone:") {
+			fallback = line
+		}
 	}
-	return ""
+	if len(fallback) > 240 {
+		return fallback[:240]
+	}
+	return fallback
 }
 
 func (r Runner) run(ctx context.Context, repo, passwordFile string, extraEnv []string, onStdout func(string), args ...string) (string, string, int, error) {

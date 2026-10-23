@@ -28,6 +28,13 @@ func TestArchiveFileStripsPayload(t *testing.T) {
 	}
 }
 
+func TestNormalizeProgressFromFiles(t *testing.T) {
+	got := normalizeProgress(model.Progress{Phase: "Reading site files", FilesDone: 25, FilesTotal: 100})
+	if !got.PercentKnown || got.Percent != 25 {
+		t.Fatalf("%#v", got)
+	}
+}
+
 func TestSavePercent(t *testing.T) {
 	ratio, ok := savePercent(50, 200)
 	if !ok || ratio != 25 {

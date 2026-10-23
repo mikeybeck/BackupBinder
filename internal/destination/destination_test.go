@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"local-backup/internal/model"
 )
@@ -25,6 +26,24 @@ func TestLoadShippedKinds(t *testing.T) {
 	}
 	if !strings.Contains(IDs(), "gdrive") {
 		t.Fatal(IDs())
+	}
+}
+
+func TestGdriveRcloneGlobalOptsPaceDrive(t *testing.T) {
+	kind, err := ByID("gdrive")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(kind.RcloneArgs, "serve restic --stdio") {
+		t.Fatalf("rclone.args must keep serve restic --stdio, got %q", kind.RcloneArgs)
+	}
+	if !strings.Contains(kind.RcloneArgs, "tpslimit") || !strings.Contains(kind.RcloneArgs, "transfers 1") {
+		t.Fatalf("expected Drive pacing args, got %q", kind.RcloneArgs)
+	}
+	opts := kind.RcloneGlobalOpts()
+	joined := strings.Join(opts, " ")
+	if !strings.Contains(joined, "rclone.args=") || !strings.Contains(joined, "serve restic") {
+		t.Fatalf("%v", opts)
 	}
 }
 
@@ -52,6 +71,22 @@ func TestURLTemplates(t *testing.T) {
 		if err != nil || got != tc.want {
 			t.Fatalf("%s: got %q want %q (%v)", tc.kind, got, tc.want, err)
 		}
+	}
+}
+
+func TestValidateRequiresFields(t *testing.T) {
+	site := model.Site{Root: "/tmp/site"}
+	repo := "/tmp/repo"
+	gdrive, err := ByID("gdrive")
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = gdrive.Validate(site, repo, model.Destination{Kind: "gdrive", Path: "local-backup/site"})
+	if err == nil || !strings.Contains(err.Error(), "Google Drive remote is required") {
+		t.Fatalf("expected required host, got %v", err)
+	}
+	if err := gdrive.CheckAccess(model.Destination{Kind: "gdrive", Path: "local-backup/site"}, false); err == nil {
+		t.Fatal("expected CheckAccess to require host")
 	}
 }
 
@@ -111,6 +146,37 @@ func TestRcloneRemoteListed(t *testing.T) {
 	}
 }
 
+func TestParseRcloneRemotes(t *testing.T) {
+	got := parseRcloneRemotes("gdrive:\nother:\n")
+	if len(got) != 2 || got[0] != "gdrive" || got[1] != "other" {
+		t.Fatalf("%#v", got)
+	}
+	got = parseRcloneRemotes("gdrive: drive\n")
+	if len(got) != 1 || got[0] != "gdrive" {
+		t.Fatalf("%#v", got)
+	}
+}
+
+func TestApplyDefaultsFillsSoleDriveRemote(t *testing.T) {
+	dir := t.TempDir()
+	script := filepath.Join(dir, "rclone")
+	body := "#!/bin/sh\nif [ \"$1\" = listremotes ]; then echo 'gdrive:'; exit 0; fi\necho unexpected \"$1\" >&2; exit 1\n"
+	if err := os.WriteFile(script, []byte(body), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("LOCAL_BACKUP_RCLONE", script)
+
+	kind, err := ByID("gdrive")
+	if err != nil {
+		t.Fatal(err)
+	}
+	dest := model.Destination{Kind: "gdrive", Path: "local-backup/site"}
+	kind.ApplyDefaults(&dest)
+	if dest.Host != "gdrive" {
+		t.Fatalf("host %#v", dest.Host)
+	}
+}
+
 func TestCheckAccessRejectsMissingRcloneRemote(t *testing.T) {
 	dir := t.TempDir()
 	script := filepath.Join(dir, "rclone")
@@ -157,6 +223,34 @@ func TestCheckAccessAcceptsConfiguredRemote(t *testing.T) {
 		t.Fatal(err)
 	}
 	if err := kind.CheckAccess(dest, true); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestRcloneProbeTimeoutCoversSlowDriveAbout(t *testing.T) {
+	if rcloneProbeTimeout < 2*time.Minute {
+		t.Fatalf("probe timeout %s is shorter than a slow Google Drive about", rcloneProbeTimeout)
+	}
+}
+
+func TestCheckAccessReportsSlowRcloneAbout(t *testing.T) {
+	dir := t.TempDir()
+	script := filepath.Join(dir, "rclone")
+	body := "#!/bin/sh\ncase \"$1\" in\nlistremotes) echo 'gdrive:'; exit 0 ;;\nabout) exec sleep 30 ;;\n*) echo unexpected \"$1\" >&2; exit 1 ;;\nesac\n"
+	if err := os.WriteFile(script, []byte(body), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("LOCAL_BACKUP_RCLONE", script)
+	previous := rcloneProbeTimeout
+	rcloneProbeTimeout = 200 * time.Millisecond
+	t.Cleanup(func() { rcloneProbeTimeout = previous })
+
+	kind, err := ByID("gdrive")
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = kind.CheckAccess(model.Destination{Host: "gdrive", Path: "local-backup/site"}, true)
+	if err == nil || !strings.Contains(err.Error(), "in time") || !strings.Contains(err.Error(), "gdrive") {
 		t.Fatal(err)
 	}
 }

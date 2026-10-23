@@ -1,13 +1,18 @@
 package app
 
 import (
+	"bufio"
 	"bytes"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
+	"local-backup/internal/capture"
 	"local-backup/internal/fail"
 	"local-backup/internal/model"
 )
@@ -66,7 +71,100 @@ func (a *App) SetLocation(siteID string, loc model.Location) (model.Site, error)
 
 const serverCopyAttempts = 4
 
-func syncServer(loc model.Location, dest string, onAttempt func(int)) error {
+// SizeEstimate is how large a site looks before a backup starts.
+type SizeEstimate struct {
+	Files  int    `json:"files"`
+	Bytes  int64  `json:"bytes"`
+	Source string `json:"source"`
+	Note   string `json:"note,omitempty"`
+}
+
+// EstimateSource counts files and bytes at the saved location without starting a backup.
+// For a server it uses an rsync dry-run with the same excludes as the copy step.
+func (a *App) EstimateSource(siteID string) (SizeEstimate, error) {
+	site, err := a.DB.GetSite(siteID)
+	if err != nil {
+		return SizeEstimate{}, err
+	}
+	return estimateSource(site)
+}
+
+func estimateSource(site model.Site) (SizeEstimate, error) {
+	if site.Location.Kind == "sftp" {
+		return estimateServer(site.Location)
+	}
+	excludes := fileExcludes(site)
+	files, err := capture.EstimateFiles(site.Root, excludes)
+	if err != nil {
+		return SizeEstimate{}, fail.Wrap("step_failed", "could not estimate site size", err)
+	}
+	return SizeEstimate{
+		Files:  files.FileCount,
+		Bytes:  files.ByteSize,
+		Source: "local directory",
+		Note:   "Matches the exclude rules used when reading files for a backup. Database dumps are not included.",
+	}, nil
+}
+
+func estimateServer(loc model.Location) (SizeEstimate, error) {
+	if _, err := exec.LookPath("rsync"); err != nil {
+		return SizeEstimate{}, fail.New("step_failed", "rsync is not installed, so the server size cannot be checked.")
+	}
+	dest, err := os.MkdirTemp("", "local-backup-estimate-*")
+	if err != nil {
+		return SizeEstimate{}, err
+	}
+	defer os.RemoveAll(dest)
+	var out bytes.Buffer
+	cmd := exec.Command("rsync", rsyncArgs(loc, dest, true)...)
+	capture.ApplySSHAgent(cmd)
+	cmd.Stdout = &out
+	cmd.Stderr = &out
+	if err := cmd.Run(); err != nil {
+		detail := strings.TrimSpace(out.String())
+		if detail == "" {
+			detail = err.Error()
+		}
+		return SizeEstimate{}, fail.New("step_failed", "Could not measure the server path. "+firstLine(detail))
+	}
+	files, bytes := parseRsyncStats(out.String())
+	return SizeEstimate{
+		Files:  files,
+		Bytes:  bytes,
+		Source: loc.User + "@" + loc.Host + ":" + loc.Path,
+		Note:   "Measured with the same excludes as the next backup copy. Database dumps are not included.",
+	}, nil
+}
+
+var (
+	rsyncFileCount = regexp.MustCompile(`(?i)Number of files:\s*([\d,]+)`)
+	rsyncTotalSize = regexp.MustCompile(`(?i)Total file size:\s*([\d,]+)\s*bytes`)
+)
+
+func parseRsyncStats(text string) (files int, bytes int64) {
+	if m := rsyncFileCount.FindStringSubmatch(text); len(m) == 2 {
+		files, _ = strconv.Atoi(strings.ReplaceAll(m[1], ",", ""))
+	}
+	if m := rsyncTotalSize.FindStringSubmatch(text); len(m) == 2 {
+		bytes, _ = strconv.ParseInt(strings.ReplaceAll(m[1], ",", ""), 10, 64)
+	}
+	return files, bytes
+}
+
+func firstLine(text string) string {
+	for _, line := range strings.Split(text, "\n") {
+		line = strings.TrimSpace(line)
+		if line != "" {
+			if len(line) > 240 {
+				return line[:240]
+			}
+			return line
+		}
+	}
+	return text
+}
+
+func syncServer(loc model.Location, dest string, onAttempt func(int), onProgress func(percent int, detail string)) error {
 	if _, err := exec.LookPath("rsync"); err != nil {
 		return fail.New("step_failed", "rsync is not installed, so the server files cannot be copied.")
 	}
@@ -76,10 +174,20 @@ func syncServer(loc model.Location, dest string, onAttempt func(int)) error {
 			onAttempt(attempt)
 		}
 		stderr.Reset()
-		cmd := exec.Command("rsync", rsyncArgs(loc, dest)...)
+		cmd := exec.Command("rsync", rsyncArgs(loc, dest, false)...)
+		capture.ApplySSHAgent(cmd)
+		// rsync --info=progress2 writes progress to stdout (not stderr) on current rsync.
+		stdout, err := cmd.StdoutPipe()
+		if err != nil {
+			return err
+		}
 		cmd.Stderr = &stderr
-		err := cmd.Run()
-		if err == nil {
+		if err := cmd.Start(); err != nil {
+			return err
+		}
+		_ = readRsyncProgress(stdout, onProgress)
+		waitErr := cmd.Wait()
+		if waitErr == nil {
 			return nil
 		}
 		if attempt == serverCopyAttempts || !retryableCopy(stderr.String()) {
@@ -88,6 +196,46 @@ func syncServer(loc model.Location, dest string, onAttempt func(int)) error {
 		time.Sleep(5 * time.Second)
 	}
 	return copyFailed(stderr.String())
+}
+
+var rsyncPercent = regexp.MustCompile(`(\d+)%`)
+
+func readRsyncProgress(r io.Reader, onProgress func(percent int, detail string)) string {
+	var collected strings.Builder
+	scanner := bufio.NewScanner(r)
+	scanner.Split(scanRsyncLines)
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if line == "" {
+			continue
+		}
+		collected.WriteString(line)
+		collected.WriteByte('\n')
+		if onProgress == nil {
+			continue
+		}
+		if m := rsyncPercent.FindStringSubmatch(line); len(m) == 2 {
+			pct, _ := strconv.Atoi(m[1])
+			if pct >= 0 && pct <= 100 {
+				onProgress(pct, line)
+			}
+		}
+	}
+	return collected.String()
+}
+
+// scanRsyncLines splits on newline or carriage return so --info=progress2 updates are seen.
+func scanRsyncLines(data []byte, atEOF bool) (advance int, token []byte, err error) {
+	if atEOF && len(data) == 0 {
+		return 0, nil, nil
+	}
+	if i := bytes.IndexAny(data, "\r\n"); i >= 0 {
+		return i + 1, data[:i], nil
+	}
+	if atEOF {
+		return len(data), data, nil
+	}
+	return 0, nil, nil
 }
 
 func retryableCopy(stderr string) bool {
@@ -112,7 +260,7 @@ func copyFailed(stderr string) *fail.Error {
 	return &fail.Error{Code: "step_failed", Message: "The server files could not be copied.", Step: "files", Hint: hint}
 }
 
-func rsyncArgs(loc model.Location, dest string) []string {
+func rsyncArgs(loc model.Location, dest string, dryRun bool) []string {
 	remote := loc.User + "@" + loc.Host + ":" + loc.Path
 	if !strings.HasSuffix(remote, "/") {
 		remote += "/"
@@ -120,8 +268,14 @@ func rsyncArgs(loc model.Location, dest string) []string {
 	if !strings.HasSuffix(dest, string(os.PathSeparator)) && !strings.HasSuffix(dest, "/") {
 		dest += string(os.PathSeparator)
 	}
-	return []string{
-		"-a",
+	args := []string{"-a"}
+	if dryRun {
+		args = append(args, "--dry-run", "--stats")
+	} else {
+		// progress2 is on stdout; outbuf=N keeps percent updates flowing through pipes.
+		args = append(args, "--info=progress2", "--outbuf=N")
+	}
+	args = append(args,
 		"--exclude", "node_modules",
 		"--exclude", "cache",
 		"--exclude", ".cache",
@@ -138,5 +292,6 @@ func rsyncArgs(loc model.Location, dest string) []string {
 		"-e", "ssh -o BatchMode=yes -o ServerAliveInterval=30 -o ServerAliveCountMax=4",
 		remote,
 		dest,
-	}
+	)
+	return args
 }

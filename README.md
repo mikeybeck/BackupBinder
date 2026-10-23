@@ -1,6 +1,8 @@
-# Local backup
+# BackupBinder
 
-Local backup keeps a restic archive of a site on this machine. A site has sources, a snapshot, destinations, and a restore procedure. Site types are addons. WordPress ships as `internal/addon/wordpress.json`. The product is the backup contract, not a WordPress host.
+BackupBinder keeps a restic archive of a site on this machine. A site has sources, a snapshot, destinations, and a restore procedure. Site types are addons. WordPress ships as `internal/addon/wordpress.json`. The product is the backup contract, not a WordPress host. The current binary is still named `local-backup`.
+
+Marketing site (static): open [`site/index.html`](site/index.html), or https://backupbinder.pages.dev. Deploy notes in [`site/README.md`](site/README.md).
 
 Database passwords are never stored in the site contract or registry. When an addon defines a database, the password is read from the config file that addon names (WordPress: `wp-config.php`), or from a secret under `var/secrets/` when you save one there. Files-only sites have no database password. The registry is SQLite. Restic is a separate binary. Destination kinds are JSON extensions (shipped under `internal/destination/`; override or add via `destinations/` next to the module or binary). A second destination is saved until you enable it. With nothing enabled, the run never leaves this computer. Google Drive uses restic's rclone backend: put rclone on `PATH` or in `.tools/rclone`, create a remote with `rclone config` (it must appear in `rclone listremotes`), then pass that remote name and a folder path. Saving an enabled Google Drive destination, or starting a backup that uses one, checks the remote before any local snapshot work.
 

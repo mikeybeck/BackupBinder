@@ -1,0 +1,259 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-10-19T11:41:00+13:00",
+  "title": "Design System: Local backup",
+  "extensions": {
+    "colorMeta": {
+      "paper": {
+        "role": "neutral",
+        "displayName": "Warm Paper",
+        "canonical": "#f2efe8",
+        "tonalRamp": ["#2a2620", "#4a443a", "#6e675a", "#948c7c", "#b8b0a0", "#d4cdc0", "#f2efe8", "#faf8f4"]
+      },
+      "ink": {
+        "role": "neutral",
+        "displayName": "Graphite Ink",
+        "canonical": "#1e2430",
+        "tonalRamp": ["#0c0e12", "#1e2430", "#353c4a", "#555e70", "#7a8496", "#a0a8b8", "#c8cdd6", "#e8eaef"]
+      },
+      "rail": {
+        "role": "neutral",
+        "displayName": "Graphite Rail",
+        "canonical": "#1e2430",
+        "tonalRamp": ["#0c0e12", "#1e2430", "#353c4a", "#555e70", "#7a8496", "#a0a8b8", "#c8cdd6", "#e8eaef"]
+      },
+      "rail-muted": {
+        "role": "neutral",
+        "displayName": "Rail Mist",
+        "canonical": "#c8cdd6",
+        "tonalRamp": ["#3a404c", "#555e70", "#7a8496", "#9aa3b2", "#c8cdd6", "#d8dce4", "#e8eaef", "#f4f5f7"]
+      },
+      "accent": {
+        "role": "primary",
+        "displayName": "Binder Teal",
+        "canonical": "#0f5c57",
+        "tonalRamp": ["#062e2b", "#0c4a46", "#0f5c57", "#167a73", "#2a9a91", "#5bb8b0", "#9ad4cf", "#d4efec"]
+      },
+      "accent-hover": {
+        "role": "primary",
+        "displayName": "Deep Teal",
+        "canonical": "#0c4a46",
+        "tonalRamp": ["#041f1d", "#062e2b", "#0c4a46", "#0f5c57", "#167a73", "#2a9a91", "#5bb8b0", "#9ad4cf"]
+      },
+      "brass": {
+        "role": "secondary",
+        "displayName": "Binder Brass",
+        "canonical": "#c4a574",
+        "tonalRamp": ["#3d3220", "#6b5638", "#8f7249", "#c4a574", "#d4bc94", "#e2d2b4", "#efe6d4", "#f7f2e8"]
+      },
+      "ok": {
+        "role": "primary",
+        "displayName": "Restore Green",
+        "canonical": "#1f6b3a",
+        "tonalRamp": ["#0d2e18", "#164f28", "#1f6b3a", "#2a8a4c", "#45a866", "#78c492", "#b0dfc0", "#e2f4e8"]
+      },
+      "bad": {
+        "role": "primary",
+        "displayName": "Fail Red",
+        "canonical": "#8c2f2f",
+        "tonalRamp": ["#3a1414", "#5c1f1f", "#8c2f2f", "#b04545", "#c96e6e", "#e0a0a0", "#f0cfcf", "#f8ecec"]
+      },
+      "muted": {
+        "role": "neutral",
+        "displayName": "Slate Mute",
+        "canonical": "#5c6570",
+        "tonalRamp": ["#24282e", "#3a4048", "#5c6570", "#7a8490", "#9aa3ae", "#b8c0c8", "#d6dbe0", "#eef0f2"]
+      },
+      "card": {
+        "role": "neutral",
+        "displayName": "Card White",
+        "canonical": "#ffffff",
+        "tonalRamp": ["#d0cdc6", "#ddd9d0", "#ebe6dc", "#f2efe8", "#f7f5f0", "#faf8f4", "#fdfcfb", "#ffffff"]
+      },
+      "line": {
+        "role": "neutral",
+        "displayName": "Paper Line",
+        "canonical": "#ddd6c8",
+        "tonalRamp": ["#8a8274", "#a89f8e", "#c4bcae", "#ddd6c8", "#e8e2d6", "#f0ebe2", "#f6f2eb", "#fbf9f5"]
+      },
+      "focus": {
+        "role": "primary",
+        "displayName": "Focus Blue",
+        "canonical": "#1a4f8b",
+        "tonalRamp": ["#0a2038", "#12365e", "#1a4f8b", "#2868b0", "#4a88c8", "#7aadda", "#b0ccea", "#e0ecf6"]
+      },
+      "field-border": {
+        "role": "neutral",
+        "displayName": "Field Edge",
+        "canonical": "#cfc7b8",
+        "tonalRamp": ["#7a7264", "#9a9180", "#b8af9e", "#cfc7b8", "#ddd6c8", "#e8e2d6", "#f2efe8", "#faf8f4"]
+      },
+      "selection": {
+        "role": "neutral",
+        "displayName": "Selection Mint",
+        "canonical": "#c5e4df",
+        "tonalRamp": ["#2a6b64", "#4a948c", "#78bdb5", "#c5e4df", "#d4efec", "#e4f6f3", "#f0faf8", "#f7fcfb"]
+      },
+      "secondary-hover": {
+        "role": "neutral",
+        "displayName": "Teal Wash",
+        "canonical": "#e7f2ef",
+        "tonalRamp": ["#3a6b64", "#5a948c", "#8abdb5", "#c5e4df", "#e7f2ef", "#eef7f4", "#f5faf8", "#fafcfb"]
+      },
+      "pre-bg": {
+        "role": "neutral",
+        "displayName": "Code Paper",
+        "canonical": "#ebe6dc",
+        "tonalRamp": ["#8a8274", "#a89f8e", "#c4bcae", "#ddd6c8", "#ebe6dc", "#f2efe8", "#f7f5f0", "#faf8f4"]
+      },
+      "bar-track": {
+        "role": "neutral",
+        "displayName": "Bar Track",
+        "canonical": "#e3ddd2",
+        "tonalRamp": ["#8a8274", "#a89f8e", "#c4bcae", "#ddd6c8", "#e3ddd2", "#ebe6dc", "#f2efe8", "#f7f5f0"]
+      }
+    },
+    "typographyMeta": {
+      "headline": { "displayName": "Headline", "purpose": "Page h1 on Setup, Sites, and site detail." },
+      "title": { "displayName": "Title", "purpose": "Card h2 section titles and brand wordmark size." },
+      "body": { "displayName": "Body", "purpose": "Default UI copy, forms, and list content at 16px/1.45." },
+      "label": { "displayName": "Trust label", "purpose": "Compact trust chips on the Sites list." },
+      "brand": { "displayName": "Brand", "purpose": "Rail wordmark Local backup." }
+    },
+    "shadows": [
+      {
+        "name": "card-lift",
+        "value": "0 1px 0 rgba(30, 36, 48, 0.04)",
+        "purpose": "Hairline lift under white cards on paper."
+      },
+      {
+        "name": "tab-active",
+        "value": "inset 0 1px 0 #fff8, 0 1px 0 rgba(30, 36, 48, 0.06)",
+        "purpose": "Active desktop tab meeting the paper pane."
+      },
+      {
+        "name": "rail-brass-edge",
+        "value": "inset -6px 0 0 #c4a574",
+        "purpose": "Desktop binder spine; mobile uses inset 0 -4px 0."
+      },
+      {
+        "name": "cta-brass-ring",
+        "value": "inset 0 0 0 1px #c4a574",
+        "purpose": "Brass ring on the rail Set up a backup CTA."
+      }
+    ],
+    "motion": [
+      {
+        "name": "bar-width",
+        "value": "width 180ms ease-out",
+        "purpose": "Progress bar fill updates."
+      },
+      {
+        "name": "indeterminate",
+        "value": "indeterminate 1.1s ease-in-out infinite",
+        "purpose": "Unknown progress slide animation."
+      }
+    ],
+    "breakpoints": [
+      { "name": "binder-stack", "value": "720px" }
+    ]
+  },
+  "components": [
+    {
+      "name": "Primary Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "Teal fill action for form submits and decisive next steps.",
+      "html": "<button class=\"ds-btn-primary\" type=\"button\">Save location</button>",
+      "css": ".ds-btn-primary { background: var(--accent, #0f5c57); color: #fff; border: 0; border-radius: 6px; padding: 0.65rem 0.9rem; font: 600 16px/1.45 system-ui, -apple-system, \"Segoe UI\", sans-serif; cursor: pointer; } .ds-btn-primary:hover { background: var(--accent-hover, #0c4a46); } .ds-btn-primary:focus-visible { outline: 2px solid var(--focus, #1a4f8b); outline-offset: 2px; }"
+    },
+    {
+      "name": "Secondary Button",
+      "kind": "button",
+      "refersTo": "button-secondary",
+      "description": "Outlined teal control for secondary actions in action rows.",
+      "html": "<button class=\"ds-btn-secondary\" type=\"button\">Cancel</button>",
+      "css": ".ds-btn-secondary { background: transparent; color: var(--accent, #0f5c57); border: 1px solid var(--accent, #0f5c57); border-radius: 6px; padding: 0.65rem 0.9rem; font: 600 16px/1.45 system-ui, -apple-system, \"Segoe UI\", sans-serif; cursor: pointer; } .ds-btn-secondary:hover { background: #e7f2ef; } .ds-btn-secondary:focus-visible { outline: 2px solid var(--focus, #1a4f8b); outline-offset: 2px; }"
+    },
+    {
+      "name": "Rail CTA",
+      "kind": "button",
+      "refersTo": "tab-cta",
+      "description": "Pinned Set up a backup control in the graphite rail.",
+      "html": "<a class=\"ds-tab-cta\" href=\"#\">Set up a backup</a>",
+      "css": ".ds-tab-cta { display: block; text-align: center; text-decoration: none; background: var(--accent, #0f5c57); color: #fff; font: 650 16px/1.45 system-ui, -apple-system, \"Segoe UI\", sans-serif; padding: 0.75rem 0.85rem; border-radius: 6px; box-shadow: inset 0 0 0 1px var(--brass, #c4a574); } .ds-tab-cta:hover { background: var(--accent-hover, #0c4a46); color: #fff; } .ds-tab-cta:focus-visible { outline: 2px solid var(--focus, #1a4f8b); outline-offset: 2px; }"
+    },
+    {
+      "name": "Text Field",
+      "kind": "input",
+      "refersTo": "input",
+      "description": "Dense labeled field on white with warm paper-edge stroke.",
+      "html": "<label class=\"ds-field\"><span class=\"ds-field-label\">Directory on this machine</span><input class=\"ds-input\" type=\"text\" placeholder=\"/home/you/sites/example\"></label>",
+      "css": ".ds-field { display: block; font: 16px/1.45 system-ui, -apple-system, \"Segoe UI\", sans-serif; color: var(--ink, #1e2430); } .ds-field-label { display: block; margin: 0.35rem 0; } .ds-input { display: block; width: 100%; border: 1px solid #cfc7b8; border-radius: 6px; padding: 0.55rem 0.65rem; background: #fff; color: var(--ink, #1e2430); font: inherit; margin: 0.35rem 0; } .ds-input:focus-visible { outline: 2px solid var(--focus, #1a4f8b); outline-offset: 2px; }"
+    },
+    {
+      "name": "Binder Rail Nav",
+      "kind": "nav",
+      "refersTo": null,
+      "description": "Graphite binder spine with brand, Setup/Sites tabs, and CTA.",
+      "html": "<aside class=\"ds-rail\" aria-label=\"Local backup\"><div class=\"ds-brand\">Local backup<small>on this machine</small></div><a class=\"ds-tab ds-tab-active\" href=\"#\">Setup</a><a class=\"ds-tab\" href=\"#\">Sites</a><a class=\"ds-tab-cta\" href=\"#\">Set up a backup</a></aside>",
+      "css": ".ds-rail { background: var(--rail, #1e2430); color: #f2efe8; padding: 1.35rem 0.85rem 1.25rem; display: flex; flex-direction: column; gap: 0.3rem; width: 13.5rem; min-height: 22rem; box-shadow: inset -6px 0 0 var(--brass, #c4a574); font: 16px/1.45 system-ui, -apple-system, \"Segoe UI\", sans-serif; } .ds-brand { font-weight: 650; font-size: 1.05rem; padding: 0.15rem 0.7rem 1.25rem; letter-spacing: -0.01em; } .ds-brand small { display: block; font-weight: 400; font-size: 0.75rem; color: var(--rail-muted, #c8cdd6); margin-top: 0.2rem; } .ds-tab { display: block; padding: 0.65rem 0.75rem; border-radius: 6px 0 0 6px; color: var(--rail-muted, #c8cdd6); text-decoration: none; font-weight: 500; border-left: 3px solid transparent; } .ds-tab:hover { color: #fff; } .ds-tab-active { background: var(--paper, #f2efe8); color: var(--ink, #1e2430); font-weight: 650; border-left-color: var(--brass, #c4a574); box-shadow: inset 0 1px 0 #fff8, 0 1px 0 rgba(30, 36, 48, 0.06); } .ds-tab-cta { margin-top: auto; display: block; text-align: center; text-decoration: none; background: var(--accent, #0f5c57); color: #fff; font-weight: 650; padding: 0.75rem 0.85rem; border-radius: 6px; box-shadow: inset 0 0 0 1px var(--brass, #c4a574); } .ds-tab-cta:hover { background: var(--accent-hover, #0c4a46); color: #fff; } .ds-tab:focus-visible, .ds-tab-cta:focus-visible { outline: 2px solid var(--focus, #1a4f8b); outline-offset: 2px; }"
+    },
+    {
+      "name": "Form Card",
+      "kind": "card",
+      "refersTo": "card",
+      "description": "White paper card for dense setup forms with brass section rule.",
+      "html": "<section class=\"ds-card\"><h2 class=\"ds-card-title\">Where the files are</h2><p class=\"ds-card-muted\">A site is read from one place on this machine or one server.</p></section>",
+      "css": ".ds-card { background: var(--card, #fff); border: 1px solid var(--line, #ddd6c8); border-radius: 8px; padding: 1.15rem 1.25rem; margin: 0.85rem 0; box-shadow: 0 1px 0 rgba(30, 36, 48, 0.04); font: 16px/1.45 system-ui, -apple-system, \"Segoe UI\", sans-serif; color: var(--ink, #1e2430); } .ds-card-title { font-size: 1.05rem; font-weight: 650; margin: 0 0 0.65rem; padding-bottom: 0.35rem; border-bottom: 1px solid var(--brass, #c4a574); } .ds-card-muted { color: var(--muted, #5c6570); margin: 0; }"
+    },
+    {
+      "name": "Trust Chip",
+      "kind": "chip",
+      "refersTo": "trust-ok",
+      "description": "Compact restore-confidence marker on a site list row.",
+      "html": "<span class=\"ds-trust\">Restore high</span><span class=\"ds-trust ds-trust-never\">No backup yet</span><span class=\"ds-trust ds-trust-bad\">Failed</span>",
+      "css": ".ds-trust { display: inline-block; font: 650 0.8rem/1.45 system-ui, -apple-system, \"Segoe UI\", sans-serif; letter-spacing: 0.03em; border: 1px solid var(--ok, #1f6b3a); color: var(--ok, #1f6b3a); padding: 0.15rem 0.45rem; border-radius: 3px; white-space: nowrap; margin-right: 0.35rem; } .ds-trust-never { border-color: var(--muted, #5c6570); color: var(--muted, #5c6570); } .ds-trust-bad { border-color: var(--bad, #8c2f2f); color: var(--bad, #8c2f2f); }"
+    },
+    {
+      "name": "Site List Row",
+      "kind": "custom",
+      "refersTo": null,
+      "description": "Quiet Sites index row: name, meta, trust chip, one open details body.",
+      "html": "<ul class=\"ds-site-list\"><li><details open><summary><div><span class=\"ds-name\">Example site</span><div class=\"ds-meta\">files · abc123</div></div><span class=\"ds-trust\">Restore high</span></summary><div class=\"ds-body\"><p class=\"ds-ok\">Last backup succeeded</p><a class=\"ds-btn-primary ds-inline\" href=\"#\">Open site</a></div></details></li></ul>",
+      "css": ".ds-site-list { list-style: none; padding: 0; margin: 0; font: 16px/1.45 system-ui, -apple-system, \"Segoe UI\", sans-serif; color: var(--ink, #1e2430); max-width: 44rem; } .ds-site-list > li { border-bottom: 1px solid var(--line, #ddd6c8); border-top: 1px solid var(--line, #ddd6c8); } .ds-site-list details { padding: 0.85rem 0; } .ds-site-list summary { cursor: pointer; list-style: none; display: grid; grid-template-columns: 1fr auto; gap: 0.75rem; align-items: baseline; } .ds-site-list summary::-webkit-details-marker { display: none; } .ds-name { font-weight: 650; color: var(--ink, #1e2430); } .ds-name:hover { color: var(--accent, #0f5c57); } .ds-meta { font-size: 0.9rem; color: var(--muted, #5c6570); margin-top: 0.2rem; } .ds-trust { font-size: 0.8rem; font-weight: 650; letter-spacing: 0.03em; border: 1px solid var(--ok, #1f6b3a); color: var(--ok, #1f6b3a); padding: 0.15rem 0.45rem; border-radius: 3px; white-space: nowrap; } .ds-body { margin-top: 0.75rem; } .ds-ok { color: var(--ok, #1f6b3a); } .ds-btn-primary { display: inline-block; width: auto; margin-top: 0.5rem; background: var(--accent, #0f5c57); color: #fff; border: 0; border-radius: 6px; padding: 0.65rem 0.9rem; text-decoration: none; font-weight: 600; } .ds-btn-primary:hover { background: var(--accent-hover, #0c4a46); } .ds-inline { width: auto; } summary:focus-visible { outline: 2px solid var(--focus, #1a4f8b); outline-offset: 2px; }"
+    }
+  ],
+  "narrative": {
+    "northStar": "Household Binder",
+    "overview": "The localhost UI reads like a labeled household binder: a dark graphite spine (rail) with Setup and Sites as tabbed sections, and a warm paper page for the active job. It is dense, practical, and quiet — forms for decisions, a calm list for trust — not a cloud status dashboard.\n\nTypography stays on the system UI sans stack so the surface feels like a local tool, not a marketing site. Depth comes from paper-on-rail contrast, a brass binder edge, and hairline paper lines; shadows stay whisper-thin. Accent teal is reserved for primary actions and links so it stays rare and decisive.",
+    "keyCharacteristics": [
+      "Graphite left rail with brass inset edge; paper main pane",
+      "Setup / Sites tabs; primary CTA pinned in the rail",
+      "Dense labeled forms in white cards with brass section rules",
+      "Quiet site list: one open row, trust chip at a glance",
+      "System UI sans; weight 650 for brand, titles, and active chrome"
+    ],
+    "rules": [
+      { "name": "The One Accent Rule", "body": "Teal is for decisive actions and links. Brass marks binder structure (edge, active tab, section rule) — do not swap their jobs.", "section": "colors" },
+      { "name": "The Paper Ground Rule", "body": "The main pane stays paper; white is for cards and fields sitting on that paper, not a full-bleed white app shell.", "section": "colors" },
+      { "name": "The System Face Rule", "body": "Stay on the system UI stack. Do not introduce Inter, Roboto, or a display serif for this surface.", "section": "typography" },
+      { "name": "The One Job Pane Rule", "body": "The main column shows the active tab’s single job — Setup walkthrough or Sites trust list — not a multi-widget dashboard.", "section": "layout" },
+      { "name": "The Flat Paper Rule", "body": "No large drop shadows or glow stacks. Depth is rail/paper/brass, not floating chrome.", "section": "elevation" }
+    ],
+    "dos": [
+      "Do keep the graphite rail + paper pane + brass edge as the shell chrome.",
+      "Do land first-run attention on Setup and the “Set up a backup” CTA.",
+      "Do treat local-only as a complete backup in copy and hierarchy; destinations stay optional.",
+      "Do use the quiet site list with trust chips for restore confidence after backups exist.",
+      "Do keep forms dense, labeled, and card-contained."
+    ],
+    "donts": [
+      "Don't restyle this as a cloud ops dashboard of status cards, KPI strips, or pill clusters.",
+      "Don't present WordPress (or any CMS) as the product default — site types are addons; unmatched paths stay files-only.",
+      "Don't invent marketing claims, testimonials, or logos not in PRODUCT.md evidence.",
+      "Don't flood brass or teal; brass is structure, teal is action.",
+      "Don't introduce a second display typeface or purple/glow marketing chrome."
+    ]
+  }
+}

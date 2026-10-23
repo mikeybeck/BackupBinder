@@ -31,17 +31,27 @@ func databaseOnServer(site model.Site, matched addon.Addon, output, secretDir st
 	methods := []string{source.Method}
 	auto := source.Method == "auto" || source.Method == ""
 	if auto {
-		if matched.Database == nil || len(matched.Database.Auto) == 0 {
-			return model.DBCapture{}, nil, fail.New("step_failed", "Unknown database method "+source.Method+".")
+		if matched.Database != nil && len(matched.Database.Auto) > 0 {
+			methods = matched.Database.Auto
+		} else if source != nil && source.Name != "" && source.User != "" {
+			methods = []string{"mysqldump"}
+		} else {
+			method := ""
+			if source != nil {
+				method = source.Method
+			}
+			return model.DBCapture{}, nil, fail.New("step_failed", "Unknown database method "+method+".")
 		}
-		methods = matched.Database.Auto
 	}
 	var secrets []string
 	var first error
 	for _, name := range methods {
 		spec, ok := matched.Dump(name)
 		if !ok {
-			return model.DBCapture{}, secrets, fail.New("step_failed", "Unknown database method "+name+".")
+			if name != "mysqldump" || source == nil || source.Name == "" || source.User == "" {
+				return model.DBCapture{}, secrets, fail.New("step_failed", "Unknown database method "+name+".")
+			}
+			spec = addon.Dump{Engine: "mysqldump", TimeoutSec: 600, FailMessage: "mysqldump failed.", Report: "mysqldump"}
 		}
 		report, found, runErr := runDumpRemote(matched, name, spec, site, output, secretDir, secrets)
 		secrets = found
@@ -207,6 +217,7 @@ func copiedDump(loc model.Location, remotePath, localPath string, timeout time.D
 	}
 	args := append(sshBase(), loc.User+"@"+loc.Host+":"+remotePath, localPath)
 	cmd := exec.Command("scp", args...)
+	ApplySSHAgent(cmd)
 	cmd.WaitDelay = 2 * time.Second
 	timer := time.AfterFunc(timeout, func() {
 		if cmd.Process != nil {
@@ -241,6 +252,7 @@ func runSSH(loc model.Location, remoteCmd, stdin string, timeout time.Duration) 
 	}
 	args := append(sshBase(), loc.User+"@"+loc.Host, remoteCmd)
 	cmd := exec.Command("ssh", args...)
+	ApplySSHAgent(cmd)
 	if stdin != "" {
 		cmd.Stdin = strings.NewReader(stdin)
 	}

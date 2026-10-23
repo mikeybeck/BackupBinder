@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"local-backup/internal/app"
+	"local-backup/internal/fail"
 	"local-backup/internal/model"
 )
 
@@ -22,8 +23,12 @@ func TestHandlersSaveSiteSettings(t *testing.T) {
 	handler := Handler(application)
 
 	home := get(t, handler, "/")
-	if home.Code != http.StatusOK || !strings.Contains(home.Body.String(), "No sites yet") {
-		t.Fatalf("home %d %s", home.Code, home.Body.String())
+	if home.Code != http.StatusSeeOther || !strings.Contains(home.Header().Get("Location"), "/setup") {
+		t.Fatalf("empty home should open Setup, got %d %s", home.Code, home.Header().Get("Location"))
+	}
+	setup := get(t, handler, "/setup")
+	if setup.Code != http.StatusOK || !strings.Contains(setup.Body.String(), "Start a backup") {
+		t.Fatalf("setup %d %s", setup.Code, setup.Body.String())
 	}
 	missing := get(t, handler, "/sites/missing")
 	if missing.Code != http.StatusNotFound {
@@ -166,6 +171,56 @@ func TestDestinationRemoveAndDisable(t *testing.T) {
 	}
 }
 
+func TestDestinationSaveRejectsMissingHostInPlace(t *testing.T) {
+	dir := t.TempDir()
+	script := filepath.Join(dir, "rclone")
+	body := "#!/bin/sh\nif [ \"$1\" = listremotes ]; then exit 0; fi\necho unexpected \"$1\" >&2; exit 1\n"
+	if err := os.WriteFile(script, []byte(body), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("LOCAL_BACKUP_RCLONE", script)
+
+	application, err := app.Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { application.Close() })
+	handler := Handler(application)
+
+	siteDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(siteDir, "note.txt"), []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := application.Register(siteDir, "Notes", "notes", true); err != nil {
+		t.Fatal(err)
+	}
+
+	resp := postForm(t, handler, "/sites/notes/destinations", url.Values{
+		"kind": {"gdrive"}, "path": {"local-backup/notes"}, "enabled": {"on"},
+	})
+	if resp.Code != http.StatusOK {
+		t.Fatalf("expected re-render %d", resp.Code)
+	}
+	page := resp.Body.String()
+	if !strings.Contains(page, "Destination was not saved") || !strings.Contains(page, "Google Drive remote is required") {
+		t.Fatal(page)
+	}
+	destIdx := strings.Index(page, `id="destinations"`)
+	errIdx := strings.Index(page, "Destination was not saved")
+	if destIdx < 0 || errIdx < destIdx {
+		t.Fatal("error should appear inside destinations section")
+	}
+	site, err := application.DB.GetSite("notes")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, dest := range site.Destinations {
+		if dest.Kind == "gdrive" {
+			t.Fatalf("incomplete gdrive was saved: %#v", dest)
+		}
+	}
+}
+
 func TestDestinationSaveKeepsFieldsOnError(t *testing.T) {
 	dir := t.TempDir()
 	script := filepath.Join(dir, "rclone")
@@ -203,7 +258,7 @@ func TestDestinationSaveKeepsFieldsOnError(t *testing.T) {
 	if strings.Contains(page, "local snapshot is already stored") {
 		t.Fatal(page)
 	}
-	if !strings.Contains(page, `id="dest-gdrive-host" name="host" value="gdrive"`) {
+	if !strings.Contains(page, `id="dest-gdrive-host" name="host"`) || !strings.Contains(page, `value="gdrive" selected`) {
 		t.Fatal("host field was cleared")
 	}
 	if !strings.Contains(page, `id="dest-gdrive-path" name="path" value="local-backup/notes"`) {
@@ -217,6 +272,80 @@ func TestDestinationSaveKeepsFieldsOnError(t *testing.T) {
 	}
 	if !strings.Contains(page, `id="destinations"`) || !strings.Contains(page, `getElementById("destinations")`) {
 		t.Fatal("focus target missing")
+	}
+}
+
+func TestSitePageListsStoredBackups(t *testing.T) {
+	application, err := app.Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { application.Close() })
+	handler := Handler(application)
+
+	siteDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(siteDir, "note.txt"), []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := application.Register(siteDir, "Notes", "notes", true); err != nil {
+		t.Fatal(err)
+	}
+
+	empty := get(t, handler, "/sites/notes").Body.String()
+	localRepo := filepath.Join(application.Home, "restic", "notes")
+	if !strings.Contains(empty, "Stored backups on this machine") || !strings.Contains(empty, "None yet in the local repository.") || !strings.Contains(empty, localRepo) {
+		t.Fatal(empty)
+	}
+
+	older := &model.Manifest{
+		OK: true, SizeBytes: 40,
+		Snapshot: model.Snapshot{RunID: "run-a", ResticSnapshotID: "snap-a"},
+		Restore:  model.Restore{Confidence: "never"},
+	}
+	newer := &model.Manifest{
+		OK: true, SizeBytes: 80,
+		Snapshot: model.Snapshot{RunID: "run-b", ResticSnapshotID: "snap-b"},
+		Restore:  model.Restore{Confidence: "checked"},
+	}
+	if err := application.DB.InsertRun("notes", "run-a", "2026-01-01T00:00:00Z", older, nil); err != nil {
+		t.Fatal(err)
+	}
+	if err := application.DB.InsertRun("notes", "run-b", "2026-01-02T00:00:00Z", newer, nil); err != nil {
+		t.Fatal(err)
+	}
+	failure := &fail.Error{Code: "step_failed", Message: "disk full", Step: "archive"}
+	if err := application.DB.InsertRun("notes", "run-fail", "2026-01-03T00:00:00Z", nil, failure); err != nil {
+		t.Fatal(err)
+	}
+
+	page := get(t, handler, "/sites/notes").Body.String()
+	for _, want := range []string{
+		"Stored backups on this machine",
+		localRepo,
+		"Destinations below are separate copies",
+		"2026-01-02T00:00:00Z · 80 bytes · Restore checked",
+		"2026-01-01T00:00:00Z · 40 bytes · Restore never",
+	} {
+		if !strings.Contains(page, want) {
+			t.Fatalf("missing %q\n%s", want, page)
+		}
+	}
+	if strings.Contains(page, "None yet in the local repository.") {
+		t.Fatal("empty copy still shown")
+	}
+	storedIdx := strings.Index(page, "Stored backups on this machine")
+	formIdx := strings.Index(page, `action="/sites/notes/backup"`)
+	if storedIdx < 0 || formIdx < 0 || storedIdx > formIdx {
+		t.Fatal("stored backups should appear before Back up now")
+	}
+	listSlice := page[storedIdx:formIdx]
+	if strings.Contains(listSlice, "disk full") || strings.Contains(listSlice, "run-fail") {
+		t.Fatal("failed run listed under stored backups")
+	}
+	newerIdx := strings.Index(listSlice, "2026-01-02T00:00:00Z")
+	olderIdx := strings.Index(listSlice, "2026-01-01T00:00:00Z")
+	if newerIdx < 0 || olderIdx < 0 || newerIdx > olderIdx {
+		t.Fatal("backups should be newest first")
 	}
 }
 
@@ -244,12 +373,19 @@ func TestWizardLocationHasEveryField(t *testing.T) {
 		t.Fatal(err)
 	}
 	created := postForm(t, handler, "/setup", url.Values{"kind": {"local"}, "local_path": {dir}})
-	if created.Code != http.StatusSeeOther || !strings.HasSuffix(created.Header().Get("Location"), "/setup") {
-		t.Fatalf("create %d %s", created.Code, created.Header().Get("Location"))
+	loc := created.Header().Get("Location")
+	if created.Code != http.StatusSeeOther || !strings.Contains(loc, "/setup") {
+		t.Fatalf("create %d %s", created.Code, loc)
 	}
-	namePage := get(t, handler, created.Header().Get("Location"))
+	if !strings.Contains(loc, "notice=") || !strings.Contains(loc, "Likely+backup+size") {
+		t.Fatalf("expected size notice in %s", loc)
+	}
+	namePage := get(t, handler, loc)
 	if namePage.Code != http.StatusOK || !strings.Contains(namePage.Body.String(), `name="name"`) || !strings.Contains(namePage.Body.String(), "Back") {
 		t.Fatalf("name step %d %s", namePage.Code, namePage.Body.String())
+	}
+	if !strings.Contains(namePage.Body.String(), "Likely backup size") {
+		t.Fatal("size notice missing from name step")
 	}
 }
 

@@ -2,6 +2,7 @@
 package ui
 
 import (
+	"encoding/json"
 	"fmt"
 	"html/template"
 	"net/http"
@@ -31,6 +32,7 @@ func Handler(application *app.App) http.Handler {
 	mux.HandleFunc("GET /sites/{id}/setup/{step}", ui.setupShow)
 	mux.HandleFunc("POST /sites/{id}/setup/{step}", ui.setupSave)
 	mux.HandleFunc("GET /sites/{id}", ui.site)
+	mux.HandleFunc("GET /sites/{id}/progress", ui.progressJSON)
 	mux.HandleFunc("POST /sites/{id}/backup", ui.backup)
 	mux.HandleFunc("POST /sites/{id}/destinations", ui.destination)
 	mux.HandleFunc("POST /sites/{id}/destinations/{dest}/enabled", ui.destinationEnabled)
@@ -77,12 +79,14 @@ type card struct {
 
 type page struct {
 	Title     string
+	Nav       string // "setup" or "sites" — binder tab
 	Empty     bool
 	Cards     []card
 	Site      *siteView
 	Notice    string
 	NoticeBad bool
 	Refresh   bool
+	Watch     bool
 	FormErr   string
 	Tools     string
 	DestKinds []destKindView
@@ -156,6 +160,38 @@ type destFieldView struct {
 	Name        string
 	Label       string
 	Placeholder string
+	Required    bool
+	Choices     []string
+}
+
+// Value prefers a draft value, otherwise the sole choice when there is only one.
+func (f destFieldView) Value(draft string) string {
+	if draft != "" {
+		return draft
+	}
+	if len(f.Choices) == 1 {
+		return f.Choices[0]
+	}
+	return ""
+}
+
+// Options returns Choices plus a draft value that is not already listed.
+func (f destFieldView) Options(draft string) []string {
+	if draft == "" {
+		return f.Choices
+	}
+	for _, choice := range f.Choices {
+		if choice == draft {
+			return f.Choices
+		}
+	}
+	return append([]string{draft}, f.Choices...)
+}
+
+type backupRow struct {
+	When       string
+	Size       string
+	Confidence string
 }
 
 type siteView struct {
@@ -173,6 +209,7 @@ type siteView struct {
 	Steps           []string
 	Sources         []string
 	Destinations    []destView
+	Backups         []backupRow
 	Cron            string
 	CronOn          bool
 	UploadKiB       string
@@ -187,6 +224,7 @@ type siteView struct {
 	LocationHost    string
 	LocationUser    string
 	LocationPath    string
+	CanCheckRestore bool
 	Progress        progressView
 	DBEnabled       bool
 	DBName          string
@@ -197,6 +235,7 @@ type siteView struct {
 	DBSummary       string
 	DestWarning     string
 	Config          string
+	LocalRepo       string
 }
 
 type progressView struct {
@@ -207,6 +246,9 @@ type progressView struct {
 	Count   string
 	Written string
 	Limit   string
+	ETA     string
+	Detail  string
+	Notice  string
 }
 
 type destView struct {
@@ -249,7 +291,15 @@ func (s *server) home(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, err)
 		return
 	}
-	view := page{Title: "Sites", Empty: len(sites) == 0, Notice: r.URL.Query().Get("notice"), NoticeBad: r.URL.Query().Get("bad") == "1", Tools: s.app.Restic.Binary}
+	if len(sites) == 0 {
+		target := "/setup"
+		if q := r.URL.RawQuery; q != "" {
+			target += "?" + q
+		}
+		http.Redirect(w, r, target, http.StatusSeeOther)
+		return
+	}
+	view := page{Title: "Sites", Nav: "sites", Notice: r.URL.Query().Get("notice"), NoticeBad: r.URL.Query().Get("bad") == "1", Tools: s.app.Restic.Binary}
 	for _, site := range sites {
 		item := s.card(site)
 		if item.Status == "running" {
@@ -302,7 +352,7 @@ func (s *server) card(site model.Site) card {
 }
 
 func (s *server) registerForm(w http.ResponseWriter, r *http.Request) {
-	s.render(w, "register", page{Title: "Register a site", Tools: s.app.Restic.Binary})
+	s.render(w, "register", page{Title: "Register a site", Nav: "setup", Tools: s.app.Restic.Binary})
 }
 
 func (s *server) register(w http.ResponseWriter, r *http.Request) {
@@ -329,9 +379,11 @@ func (s *server) site(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	watch := r.URL.Query().Get("watch") == "1" || view.Status == "running"
 	s.render(w, "site", page{
 		Title: view.Name, Site: view, Notice: r.URL.Query().Get("notice"), NoticeBad: r.URL.Query().Get("bad") == "1",
-		Refresh: view.Status == "running", Tools: s.app.Restic.Binary, DestKinds: destKindViews(),
+		Refresh: view.Status == "running" && !watch, Watch: watch,
+		Tools: s.app.Restic.Binary, DestKinds: destKindViews(),
 	})
 }
 
@@ -344,7 +396,10 @@ func destKindViews() []destKindView {
 	for _, kind := range kinds {
 		item := destKindView{ID: kind.ID, Label: kind.Label, Note: kind.Note}
 		for _, field := range kind.Fields {
-			item.Fields = append(item.Fields, destFieldView{Name: field.Name, Label: field.Label, Placeholder: field.Placeholder})
+			item.Fields = append(item.Fields, destFieldView{
+				Name: field.Name, Label: field.Label, Placeholder: field.Placeholder, Required: field.Required,
+				Choices: destination.FieldChoices(field.Choices),
+			})
 		}
 		if kind.Credentials != nil {
 			item.HasCredentials = true
@@ -373,10 +428,17 @@ func (s *server) siteView(w http.ResponseWriter, r *http.Request) (*siteView, bo
 		KeepMonthly: formatCount(inspected.Site.Retention.KeepMonthly), KeepYearly: formatCount(inspected.Site.Retention.KeepYearly),
 		LocationKind: inspected.Site.Location.Kind, LocationHost: inspected.Site.Location.Host,
 		LocationUser: inspected.Site.Location.User, LocationPath: inspected.Site.Location.Path,
-		Config: filepath.Join(s.app.Home, "sites", inspected.Site.ID+".json"),
+		Config:    filepath.Join(s.app.Home, "sites", inspected.Site.ID+".json"),
+		LocalRepo: filepath.Join(s.app.Home, "restic", inspected.Site.ID),
 	}
 	if view.LocationKind == "" {
 		view.LocationKind = "local"
+	}
+	for _, dest := range inspected.Site.Destinations {
+		if dest.Kind == "local_restic" && dest.Path != "" {
+			view.LocalRepo = dest.Path
+			break
+		}
 	}
 	for _, source := range inspected.Site.Sources {
 		if source.Kind == "files" {
@@ -421,6 +483,20 @@ func (s *server) siteView(w http.ResponseWriter, r *http.Request) (*siteView, bo
 			}
 		}
 	}
+	view.CanCheckRestore = s.app.HasSuccessfulBackup(id)
+	if listed, err := s.app.ListBackups(id); err == nil {
+		for _, backup := range listed.Backups {
+			confidence := backup.RestoreConfidence
+			if confidence == "" {
+				confidence = "never"
+			}
+			view.Backups = append(view.Backups, backupRow{
+				When:       backup.StartedAt,
+				Size:       strconv.FormatInt(backup.SizeBytes, 10) + " bytes",
+				Confidence: confidence,
+			})
+		}
+	}
 	statusByID := map[string]string{}
 	reasonByID := map[string]string{}
 	if run.Manifest != nil {
@@ -461,20 +537,47 @@ func (s *server) progressView(siteID, runID string) progressView {
 	if !ok {
 		return progressView{Phase: "Starting the backup"}
 	}
-	return viewProgress(p)
+	view := viewProgress(p)
+	run, err := s.app.Latest(siteID)
+	started := time.Time{}
+	if err == nil {
+		started, _ = time.Parse(time.RFC3339, run.StartedAt)
+	}
+	upload, download := 0, 0
+	if site, err := s.app.DB.GetSite(siteID); err == nil {
+		upload, download = site.Limits.UploadKiB, site.Limits.DownloadKiB
+		view.Limit = uploadLimitNote(site.Limits.UploadKiB)
+	}
+	timing := app.EstimateTiming(p, started, upload, download, time.Now())
+	view.ETA = timing.ETA
+	view.Detail = timing.Detail
+	view.Notice = timing.Notice
+	return view
 }
 
 func viewProgress(p model.Progress) progressView {
-	view := progressView{Phase: p.Phase, File: p.File, Known: p.PercentKnown}
-	if p.PercentKnown {
-		pct := int(p.Percent + 0.5)
-		if pct < 0 {
-			pct = 0
+	view := progressView{Phase: p.Phase, File: p.File}
+	switch {
+	case p.PercentKnown:
+		view.Known = true
+		view.Percent = int(p.Percent + 0.5)
+	case p.FilesTotal > 0:
+		view.Known = true
+		view.Percent = int(float64(p.FilesDone)*100/float64(p.FilesTotal) + 0.5)
+	case p.BytesTotal > 0 && p.BytesWritten > 0:
+		view.Known = true
+		view.Percent = int(float64(p.BytesWritten)*100/float64(p.BytesTotal) + 0.5)
+		if view.Percent > 99 {
+			view.Percent = 99
 		}
-		if pct > 100 {
-			pct = 100
+	}
+	if view.Known {
+		if view.Percent < 0 {
+			view.Percent = 0
 		}
-		view.Percent = pct
+		if view.Percent > 100 {
+			view.Percent = 100
+		}
 	}
 	if p.FilesTotal > 0 {
 		view.Count = strconv.FormatInt(p.FilesDone, 10) + " of " + strconv.FormatInt(p.FilesTotal, 10) + " files"
@@ -510,41 +613,58 @@ func formatBytes(n int64) string {
 	}
 }
 
-type backupResult struct {
-	manifest model.Manifest
-	err      error
-}
-
 func (s *server) backup(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
-	outcome := make(chan backupResult, 1)
-	go func() {
-		manifest, err := s.app.CreateBackup(id)
-		outcome <- backupResult{manifest: manifest, err: err}
-	}()
-	deadline := time.Now().Add(2 * time.Second)
-	for {
-		select {
-		case result := <-outcome:
-			if result.err != nil {
-				s.redirectNotice(w, r, "/sites/"+id, "Backup failed. "+noticeText(result.err), true)
-				return
-			}
-			s.redirectNotice(w, r, "/sites/"+id, backupNotice(result.manifest), false)
-			return
-		default:
-		}
-		run, err := s.app.Latest(id)
-		if err == nil && run.InProgress() {
-			http.Redirect(w, r, "/sites/"+id, http.StatusSeeOther)
-			return
-		}
-		if time.Now().After(deadline) {
-			http.Redirect(w, r, "/sites/"+id, http.StatusSeeOther)
-			return
-		}
-		time.Sleep(20 * time.Millisecond)
+	if err := s.app.StartBackupDetached(id); err != nil {
+		s.redirectNotice(w, r, "/sites/"+id, "Backup failed. "+noticeText(err), true)
+		return
 	}
+	http.Redirect(w, r, "/sites/"+id+"?watch=1#backup-progress", http.StatusSeeOther)
+}
+
+func (s *server) progressJSON(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	run, err := s.app.Latest(id)
+	if err != nil || run.RunID == "" {
+		writeProgressJSON(w, map[string]any{"ok": true, "running": false, "status": "none"})
+		return
+	}
+	if run.InProgress() {
+		view := s.progressView(id, run.RunID)
+		writeProgressJSON(w, map[string]any{
+			"ok": true, "running": true, "status": "running",
+			"started_at":  run.StartedAt,
+			"phase":       view.Phase,
+			"percent":     view.Percent,
+			"known":       view.Known,
+			"file":        view.File,
+			"count":       view.Count,
+			"written":     view.Written,
+			"limit":       view.Limit,
+			"eta":         view.ETA,
+			"eta_detail":  view.Detail,
+			"long_notice": view.Notice,
+		})
+		return
+	}
+	status := "failed"
+	notice := ""
+	if run.OK && run.Manifest != nil {
+		status = "success"
+		notice = backupNotice(*run.Manifest)
+	} else if run.Failure != nil {
+		notice = "Backup failed. " + noticeText(run.Failure)
+	}
+	writeProgressJSON(w, map[string]any{
+		"ok": true, "running": false, "status": status, "notice": notice,
+	})
+}
+
+func writeProgressJSON(w http.ResponseWriter, payload map[string]any) {
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Cache-Control", "no-store")
+	enc := json.NewEncoder(w)
+	_ = enc.Encode(payload)
 }
 
 func backupNotice(manifest model.Manifest) string {
@@ -645,7 +765,11 @@ func (s *server) destination(w http.ResponseWriter, r *http.Request) {
 		})
 		return
 	}
-	s.redirectNotice(w, r, "/sites/"+id, "Destination saved. It is not contacted until you enable it.", false)
+	notice := "Destination saved. It is not contacted until you enable it."
+	if dest.Enabled {
+		notice = "Destination saved and checked. It will receive a copy on the next backup."
+	}
+	s.redirectNotice(w, r, "/sites/"+id+"#destinations", notice, false)
 }
 
 func (s *server) destinationEnabled(w http.ResponseWriter, r *http.Request) {
@@ -657,12 +781,19 @@ func (s *server) destinationEnabled(w http.ResponseWriter, r *http.Request) {
 	}
 	enabled := r.FormValue("enabled") == "on"
 	if _, err := s.app.SetDestinationEnabled(id, destID, enabled); err != nil {
-		s.redirectNotice(w, r, "/sites/"+id+"#destinations", "Destination was not updated. "+noticeText(err), true)
+		view, ok := s.siteView(w, r)
+		if !ok {
+			return
+		}
+		s.render(w, "site", page{
+			Title: view.Name, Site: view, FormErr: "Destination was not updated. "+noticeText(err),
+			Tools: s.app.Restic.Binary, DestKinds: destKindViews(), Focus: "destinations",
+		})
 		return
 	}
 	notice := "Destination " + destID + " is saved only until you enable it."
 	if enabled {
-		notice = "Destination " + destID + " is enabled for the next backup."
+		notice = "Destination " + destID + " is enabled and checked for the next backup."
 	}
 	s.redirectNotice(w, r, "/sites/"+id+"#destinations", notice, false)
 }
@@ -764,11 +895,28 @@ func (s *server) location(w http.ResponseWriter, r *http.Request) {
 		s.redirectNotice(w, r, "/sites/"+id, "Location was not saved. "+noticeText(err), true)
 		return
 	}
-	if saved.Location.Kind == "sftp" {
-		s.redirectNotice(w, r, "/sites/"+id, "Location saved. The next backup copies files from "+saved.Location.User+"@"+saved.Location.Host+":"+saved.Location.Path+".", false)
-		return
+	notice := locationSavedNotice(saved)
+	if est, estErr := s.app.EstimateSource(saved.ID); estErr == nil {
+		notice += " " + sizeEstimateNotice(est)
+	} else {
+		notice += " Size could not be checked yet. " + noticeText(estErr)
 	}
-	s.redirectNotice(w, r, "/sites/"+id, "Location saved. Files are read from "+saved.Root+".", false)
+	s.redirectNotice(w, r, "/sites/"+id, notice, false)
+}
+
+func locationSavedNotice(site model.Site) string {
+	if site.Location.Kind == "sftp" {
+		return "Location saved. The next backup copies files from " + site.Location.User + "@" + site.Location.Host + ":" + site.Location.Path + "."
+	}
+	return "Location saved. Files are read from " + site.Root + "."
+}
+
+func sizeEstimateNotice(est app.SizeEstimate) string {
+	text := "Likely backup size: about " + strconv.Itoa(est.Files) + " files, " + formatBytes(est.Bytes) + "."
+	if est.Note != "" {
+		text += " " + est.Note
+	}
+	return text
 }
 
 func (s *server) limits(w http.ResponseWriter, r *http.Request) {
@@ -898,6 +1046,14 @@ func noticeText(err error) string {
 func (s *server) render(w http.ResponseWriter, name string, view page) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-store")
+	if view.Nav == "" {
+		switch name {
+		case "setup", "register":
+			view.Nav = "setup"
+		default:
+			view.Nav = "sites"
+		}
+	}
 	view.Title = name
 	if err := s.tmpl.ExecuteTemplate(w, name, view); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -937,7 +1093,7 @@ func (s *server) setupCreate(w http.ResponseWriter, r *http.Request) {
 		})
 		return
 	}
-	http.Redirect(w, r, setupRedirect(result), http.StatusSeeOther)
+	http.Redirect(w, r, setupRedirect(result, s.setupSizeNotice(result.SiteID)), http.StatusSeeOther)
 }
 
 func (s *server) setupShow(w http.ResponseWriter, r *http.Request) {
@@ -1007,7 +1163,22 @@ func (s *server) setupSave(w http.ResponseWriter, r *http.Request) {
 		})
 		return
 	}
-	http.Redirect(w, r, setupRedirect(result), http.StatusSeeOther)
+	notice := ""
+	if step == "location" {
+		notice = s.setupSizeNotice(result.SiteID)
+	}
+	http.Redirect(w, r, setupRedirect(result, notice), http.StatusSeeOther)
+}
+
+func (s *server) setupSizeNotice(siteID string) string {
+	if siteID == "" {
+		return ""
+	}
+	est, err := s.app.EstimateSource(siteID)
+	if err != nil {
+		return "Size could not be checked yet. " + noticeText(err)
+	}
+	return sizeEstimateNotice(est)
 }
 
 func (s *server) wizardSite(w http.ResponseWriter, r *http.Request) (model.Site, bool) {
@@ -1113,11 +1284,15 @@ func formKind(r *http.Request) string {
 	return "local"
 }
 
-func setupRedirect(result app.SetupResult) string {
+func setupRedirect(result app.SetupResult, notice string) string {
+	path := "/sites/" + result.SiteID + "/setup"
 	if result.Phase == "ready" || app.NextStep(result.Setup) == "" {
-		return "/sites/" + result.SiteID
+		path = "/sites/" + result.SiteID
 	}
-	return "/sites/" + result.SiteID + "/setup"
+	if notice == "" {
+		return path
+	}
+	return path + "?notice=" + url.QueryEscape(notice)
 }
 
 func wizardStep(step string) bool {
@@ -1140,98 +1315,250 @@ func previousStep(step string) string {
 }
 
 const pageHTML = `
-{{define "home"}}
+{{define "styles"}}
+:root {
+  --paper: #f2efe8;
+  --ink: #1e2430;
+  --rail: #1e2430;
+  --rail-muted: #c8cdd6;
+  --accent: #0f5c57;
+  --accent-hover: #0c4a46;
+  --brass: #c4a574;
+  --ok: #1f6b3a;
+  --bad: #8c2f2f;
+  --muted: #5c6570;
+  --card: #ffffff;
+  --line: #ddd6c8;
+  --focus: #1a4f8b;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0; min-height: 100vh;
+  background: var(--paper); color: var(--ink);
+  font: 16px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+a { color: var(--accent); }
+a:focus-visible, button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible, summary:focus-visible {
+  outline: 2px solid var(--focus); outline-offset: 2px;
+}
+::selection { background: #c5e4df; color: var(--ink); }
+* { scrollbar-width: thin; scrollbar-color: var(--brass) var(--paper); }
+*::-webkit-scrollbar { width: 10px; height: 10px; }
+*::-webkit-scrollbar-track { background: var(--paper); }
+*::-webkit-scrollbar-thumb { background: var(--brass); border-radius: 6px; border: 2px solid var(--paper); }
+.shell { display: grid; grid-template-columns: 13.5rem 1fr; min-height: 100vh; }
+.rail {
+  background: var(--rail); color: #f2efe8;
+  padding: 1.35rem 0.85rem 1.25rem;
+  display: flex; flex-direction: column; gap: 0.3rem;
+  position: sticky; top: 0; height: 100vh;
+  box-shadow: inset -6px 0 0 var(--brass);
+}
+.brand { font-weight: 650; font-size: 1.05rem; padding: 0.15rem 0.7rem 1.25rem; letter-spacing: -0.01em; }
+.brand small { display: block; font-weight: 400; font-size: 0.75rem; color: var(--rail-muted); margin-top: 0.2rem; }
+.tab {
+  display: block; padding: 0.65rem 0.75rem; border-radius: 6px 0 0 6px;
+  color: var(--rail-muted); text-decoration: none; font-weight: 500;
+  border-left: 3px solid transparent;
+}
+.tab:hover { color: #fff; }
+.tab.active {
+  background: var(--paper); color: var(--ink); font-weight: 650;
+  border-left-color: var(--brass);
+  box-shadow: inset 0 1px 0 #fff8, 0 1px 0 rgba(30, 36, 48, 0.06);
+}
+.tab-cta {
+  margin-top: auto; display: block; text-align: center; text-decoration: none;
+  background: var(--accent); color: #fff; font-weight: 650;
+  padding: 0.75rem 0.85rem; border-radius: 6px;
+  box-shadow: inset 0 0 0 1px var(--brass);
+}
+.tab-cta:hover { background: var(--accent-hover); color: #fff; }
+.content { padding: 1.75rem 2rem 2.5rem; max-width: 44rem; }
+h1 { font-size: 1.65rem; font-weight: 650; margin: 0 0 0.4rem; letter-spacing: -0.02em; overflow-wrap: anywhere; }
+h2 { font-size: 1.05rem; font-weight: 650; margin: 0 0 0.55rem; }
+h3 { font-size: 0.9rem; font-weight: 650; margin: 0.85rem 0 0.4rem; }
+.lede { color: var(--muted); max-width: 38rem; margin: 0 0 1.35rem; }
+.muted { color: var(--muted); }
+.ok { color: var(--ok); }
+.bad { color: var(--bad); }
+p, li, code { overflow-wrap: anywhere; }
+.card {
+  background: var(--card); border: 1px solid var(--line); border-radius: 8px;
+  padding: 1.15rem 1.25rem; margin: 0.85rem 0;
+  box-shadow: 0 1px 0 rgba(30, 36, 48, 0.04);
+}
+.card h2 {
+  padding-bottom: 0.35rem;
+  border-bottom: 1px solid var(--brass);
+  margin-bottom: 0.65rem;
+}
+.hint { margin-top: 1rem; font-size: 0.88rem; color: var(--muted); }
+label, input, select, button, textarea { display: block; width: 100%; font: inherit; margin: 0.35rem 0; }
+input, select, textarea {
+  border: 1px solid #cfc7b8; border-radius: 6px; padding: 0.55rem 0.65rem;
+  background: #fff; color: var(--ink);
+}
+button, .button {
+  background: var(--accent); color: #fff; border: 0; border-radius: 6px;
+  padding: 0.65rem 0.9rem; text-align: center; text-decoration: none; font-weight: 600; cursor: pointer;
+}
+button:hover, .button:hover { background: var(--accent-hover); }
+.secondary { background: transparent; color: var(--accent); border: 1px solid var(--accent); }
+.secondary:hover { background: #e7f2ef; }
+.check { display: flex; align-items: center; gap: 0.5rem; width: auto; }
+.check input { width: auto; margin: 0; }
+pre { white-space: pre-wrap; overflow-wrap: anywhere; background: #ebe6dc; padding: 0.75rem; border-radius: 6px; }
+.bar {
+  height: 0.85rem; background: #e3ddd2; border-radius: 3px; overflow: hidden; margin: 0.45rem 0;
+}
+.bar > span { display: block; height: 100%; background: var(--accent); min-width: 2px; transition: width 180ms ease-out; }
+.bar.unknown > span { width: 35%; animation: indeterminate 1.1s ease-in-out infinite; }
+@keyframes indeterminate { 0% { margin-left: -35%; } 100% { margin-left: 100%; } }
+.progress-pct {
+  font-size: 1.75rem; font-weight: 650; letter-spacing: -0.02em; margin: 0.25rem 0 0.15rem;
+  color: var(--accent);
+}
+.site-list { list-style: none; padding: 0; margin: 0; }
+.site-list > li { border-bottom: 1px solid var(--line); }
+.site-list > li:first-child { border-top: 1px solid var(--line); }
+.site-list details { padding: 0.85rem 0; }
+.site-list summary {
+  cursor: pointer; list-style: none; display: grid;
+  grid-template-columns: 1fr auto; gap: 0.75rem; align-items: baseline;
+}
+.site-list summary::-webkit-details-marker { display: none; }
+.site-list summary .name { font-weight: 650; color: var(--ink); text-decoration: none; }
+.site-list summary .name:hover { color: var(--accent); }
+.site-list .meta { font-size: 0.9rem; color: var(--muted); margin-top: 0.2rem; }
+.site-list .trust {
+  font-size: 0.8rem; font-weight: 650; letter-spacing: 0.03em;
+  border: 1px solid var(--ok); color: var(--ok);
+  padding: 0.15rem 0.45rem; border-radius: 3px; white-space: nowrap;
+}
+.site-list .trust.never { border-color: var(--muted); color: var(--muted); }
+.site-list .trust.bad { border-color: var(--bad); color: var(--bad); }
+.site-list .body { margin-top: 0.75rem; }
+.site-list .body .button { display: inline-block; width: auto; margin-top: 0.5rem; }
+.dest-list { list-style: none; padding: 0; margin: 0.5rem 0 1rem; }
+.dest-list > li { border-top: 1px solid var(--line); padding: 0.75rem 0; }
+.dest-list > li:first-child { border-top: 0; padding-top: 0; }
+.dest-actions { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-top: 0.5rem; }
+.dest-actions form { margin: 0; width: auto; }
+.dest-actions button { width: auto; margin: 0; padding: 0.4rem 0.7rem; font-size: 0.9rem; }
+.actions { display: flex; flex-wrap: wrap; gap: 0.5rem; }
+.actions button, .actions .button { width: auto; }
+.tools { margin-top: 2rem; font-size: 0.85rem; color: var(--muted); }
+@media (max-width: 720px) {
+  .shell { grid-template-columns: 1fr; }
+  .rail {
+    position: static; height: auto; padding: 0.85rem 1rem 1rem;
+    display: grid; grid-template-columns: 1fr auto; gap: 0.55rem 0.75rem; align-items: center;
+    box-shadow: inset 0 -4px 0 var(--brass);
+  }
+  .brand { padding: 0; grid-column: 1; }
+  .brand small { display: none; }
+  .nav-tabs { grid-column: 1 / -1; display: flex; gap: 0.35rem; }
+  .tab {
+    display: inline-block; border-radius: 6px 6px 0 0; padding: 0.5rem 0.75rem;
+    border-left: 0; border-bottom: 3px solid transparent;
+  }
+  .tab.active {
+    background: var(--paper); color: var(--ink);
+    border-bottom-color: var(--brass);
+    box-shadow: none;
+  }
+  .tab-cta { margin-top: 0; grid-column: 2; grid-row: 1; padding: 0.5rem 0.7rem; font-size: 0.9rem; }
+  .content { padding: 1.25rem 1rem 2rem; }
+}
+{{end}}
+
+{{define "shell-start"}}
 <!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 {{if .Refresh}}<meta http-equiv="refresh" content="2">{{end}}
-<title>Local backup</title>
-<style>
-  body { margin: 0; background: #f3efe6; color: #1c1915; font: 16px/1.45 system-ui, sans-serif; }
-  main { max-width: 40rem; margin: 0 auto; padding: 1rem; }
-  h1 { font-size: 1.6rem; margin: 0 0 0.25rem; }
-  p, li { overflow-wrap: anywhere; }
-  .card { background: #fffdf8; border: 1px solid #d9d2c5; border-radius: 8px; padding: 1rem; margin: 0.75rem 0; }
-  label, input, select, button, textarea { display: block; width: 100%; box-sizing: border-box; margin: 0.35rem 0; font: inherit; }
-  button, .button { background: #0f5c57; color: white; border: 0; border-radius: 6px; padding: 0.65rem 0.8rem; text-align: center; text-decoration: none; }
-  .secondary { background: transparent; color: #0f5c57; border: 1px solid #0f5c57; }
-  .ok { color: #1f6b3a; }
-  .bad { color: #8c2f2f; }
-  .muted { color: #5c564c; }
-  pre { white-space: pre-wrap; overflow-wrap: anywhere; background: #f6f1e7; padding: 0.75rem; }
-  .check { display: flex; align-items: center; gap: 0.5rem; }
-  .check input { width: auto; }
-  .bar { height: 0.65rem; background: #e7e1d6; border-radius: 999px; overflow: hidden; margin: 0.4rem 0; }
-  .bar > span { display: block; height: 100%; background: #0f5c57; }
-  .bar.unknown > span { width: 35%; animation: indeterminate 1.1s ease-in-out infinite; }
-  @keyframes indeterminate { 0% { margin-left: -35%; } 100% { margin-left: 100%; } }
-</style>
+<title>{{if eq .Nav "setup"}}Set up a backup{{else if .Site}}{{.Site.Name}}{{else}}Local backup{{end}}</title>
+<style>{{template "styles" .}}</style>
 </head>
 <body>
-<main>
-<h1>Local backup</h1>
-<p class="muted">Backups stay on this machine unless you enable another destination. WordPress ships as an addon. Each archive is site files, and optionally a database dump.</p>
-{{if .Notice}}<p class="notice{{if .NoticeBad}} bad{{end}}" role="status">{{.Notice}}</p>{{end}}
-{{if .Empty}}
-  <section class="card">
-    <h2>No sites yet</h2>
-    <p>Choose a directory on this computer, or one server. A matching addon, including WordPress, is applied automatically. Anything else is backed up as files. Nothing is uploaded until you enable a destination.</p>
-    <a class="button" href="/setup">Set up a backup</a>
-  </section>
-{{else}}
-  <p><a class="button" href="/setup">Set up a backup</a></p>
-  {{range .Cards}}
-  <article class="card">
-    <h2><a href="{{.Href}}">{{.Name}}</a></h2>
-    <p class="muted">{{.Adapter}} · {{.ID}}</p>
-    {{if eq .Status "running"}}
-      <p class="notice" role="status">Backup in progress since {{.When}}.</p>
-      {{template "progress" .Progress}}
-    {{else if eq .Status "success"}}
-      <p class="ok">Last backup succeeded</p>
-      <p>{{.When}} · {{.Size}}</p>
-      <p>{{.Database}}</p>
-      <p>Restore confidence: {{.Confidence}}</p>
-    {{else if eq .Status "failed"}}
-      <p class="bad">Last backup failed</p>
-      <p>{{.Error}}</p>
-      {{if .Hint}}<p>{{.Hint}}</p>{{end}}
-    {{else}}
-      <p>No backup yet.</p>
-      <p class="muted">{{.Database}}</p>
-    {{end}}
-  </article>
-  {{end}}
+<div class="shell">
+<aside class="rail" aria-label="Local backup">
+  <div class="brand">Local backup<small>on this machine</small></div>
+  <div class="nav-tabs">
+    <a class="tab{{if eq .Nav "setup"}} active{{end}}" href="/setup"{{if eq .Nav "setup"}} aria-current="page"{{end}}>Setup</a>
+    <a class="tab{{if eq .Nav "sites"}} active{{end}}" href="/"{{if eq .Nav "sites"}} aria-current="page"{{end}}>Sites</a>
+  </div>
+  <a class="tab-cta" href="/setup">Set up a backup</a>
+</aside>
+<div class="content">
 {{end}}
-<p class="muted">restic: {{.Tools}}</p>
-</main>
+
+{{define "shell-end"}}
+</div>
+</div>
 {{template "feedback" .}}
 </body>
 </html>
 {{end}}
 
+{{define "home"}}
+{{template "shell-start" .}}
+<h1>Sites</h1>
+<p class="lede">Last run and restore confidence live here. Local-only is a complete backup until you enable another destination. Site types are addons; unmatched paths stay files-only.</p>
+{{if .Notice}}<p class="notice{{if .NoticeBad}} bad{{end}}" role="status">{{.Notice}}</p>{{end}}
+<ul class="site-list">
+{{range $i, $c := .Cards}}
+  <li>
+    <details{{if or (eq $i 0) (eq $c.Status "running")}} open{{end}}>
+      <summary>
+        <div>
+          <span class="name">{{$c.Name}}</span>
+          <div class="meta">{{$c.Adapter}} · {{$c.ID}}</div>
+        </div>
+        {{if eq $c.Status "success"}}
+          <span class="trust{{if eq $c.Confidence "never"}} never{{end}}">Restore {{$c.Confidence}}</span>
+        {{else if eq $c.Status "failed"}}
+          <span class="trust bad">Failed</span>
+        {{else if eq $c.Status "running"}}
+          <span class="trust never">Running</span>
+        {{else}}
+          <span class="trust never">No backup yet</span>
+        {{end}}
+      </summary>
+      <div class="body">
+        {{if eq $c.Status "running"}}
+          <p class="notice" role="status">Backup in progress since {{$c.When}}.</p>
+          {{template "progress" $c.Progress}}
+        {{else if eq $c.Status "success"}}
+          <p class="ok">Last backup succeeded</p>
+          <p>{{$c.When}} · {{$c.Size}}</p>
+          <p>{{$c.Database}}</p>
+          <p>Restore confidence: {{$c.Confidence}}</p>
+        {{else if eq $c.Status "failed"}}
+          <p class="bad">Last backup failed</p>
+          <p>{{$c.Error}}</p>
+          {{if $c.Hint}}<p>{{$c.Hint}}</p>{{end}}
+        {{else}}
+          <p>No backup yet.</p>
+          <p class="muted">{{$c.Database}}</p>
+        {{end}}
+        <p><a class="button" href="{{$c.Href}}">Open site</a></p>
+      </div>
+    </details>
+  </li>
+{{end}}
+</ul>
+<p class="tools">restic: {{.Tools}}</p>
+{{template "shell-end" .}}
+{{end}}
+
 {{define "register"}}
-<!doctype html>
-<html lang="en">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Register a site</title>
-<style>
-  body { margin: 0; background: #f3efe6; color: #1c1915; font: 16px/1.45 system-ui, sans-serif; }
-  main { max-width: 40rem; margin: 0 auto; padding: 1rem; }
-  .card { background: #fffdf8; border: 1px solid #d9d2c5; border-radius: 8px; padding: 1rem; margin: 0.75rem 0; }
-  label, input, button { display: block; width: 100%; box-sizing: border-box; margin: 0.35rem 0; font: inherit; }
-  button { background: #0f5c57; color: white; border: 0; border-radius: 6px; padding: 0.65rem 0.8rem; }
-  .bad { color: #8c2f2f; }
-</style>
-</head>
-<body>
-<main>
-<p><a href="/">Sites</a></p>
+{{template "shell-start" .}}
 <h1>Register a site</h1>
+<p class="lede">Prefer <a href="/setup">Set up a backup</a> — it walks the same decisions with fewer dead ends.</p>
 {{if .FormErr}}<p class="notice bad" role="status">{{.FormErr}}</p>{{end}}
 <form class="card" method="post" action="/register">
   <label for="name">Name</label>
@@ -1240,50 +1567,10 @@ const pageHTML = `
   <input id="path" name="path" required placeholder="/home/you/sites/example">
   <button type="submit" data-pending="Registering…">Register</button>
 </form>
-</main>
-{{template "feedback" .}}
-</body>
-</html>
+{{template "shell-end" .}}
 {{end}}
-
 {{define "site"}}
-<!doctype html>
-<html lang="en">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-{{if .Refresh}}<meta http-equiv="refresh" content="2">{{end}}
-<title>{{.Site.Name}}</title>
-<style>
-  body { margin: 0; background: #f3efe6; color: #1c1915; font: 16px/1.45 system-ui, sans-serif; }
-  main { max-width: 40rem; margin: 0 auto; padding: 1rem; }
-  h1 { font-size: 1.5rem; overflow-wrap: anywhere; }
-  p, li, code { overflow-wrap: anywhere; }
-  .card { background: #fffdf8; border: 1px solid #d9d2c5; border-radius: 8px; padding: 1rem; margin: 0.75rem 0; }
-  label, input, select, button { display: block; width: 100%; box-sizing: border-box; margin: 0.35rem 0; font: inherit; }
-  button { background: #0f5c57; color: white; border: 0; border-radius: 6px; padding: 0.65rem 0.8rem; }
-  .secondary { background: transparent; color: #0f5c57; border: 1px solid #0f5c57; }
-  .ok { color: #1f6b3a; }
-  .bad { color: #8c2f2f; }
-  .muted { color: #5c564c; }
-  pre { white-space: pre-wrap; overflow-wrap: anywhere; background: #f6f1e7; padding: 0.75rem; }
-  .check { display: flex; align-items: center; gap: 0.5rem; }
-  .check input { width: auto; }
-  .bar { height: 0.65rem; background: #e7e1d6; border-radius: 999px; overflow: hidden; margin: 0.4rem 0; }
-  .bar > span { display: block; height: 100%; background: #0f5c57; }
-  .bar.unknown > span { width: 35%; animation: indeterminate 1.1s ease-in-out infinite; }
-  @keyframes indeterminate { 0% { margin-left: -35%; } 100% { margin-left: 100%; } }
-  .dest-list { list-style: none; padding: 0; margin: 0.5rem 0 1rem; }
-  .dest-list > li { border-top: 1px solid #e7e1d6; padding: 0.75rem 0; }
-  .dest-list > li:first-child { border-top: 0; padding-top: 0; }
-  .dest-actions { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-top: 0.5rem; }
-  .dest-actions form { margin: 0; width: auto; }
-  .dest-actions button { width: auto; margin: 0; padding: 0.4rem 0.7rem; font-size: 0.9rem; }
-</style>
-</head>
-<body>
-<main>
-<p><a href="/">Sites</a></p>
+{{template "shell-start" .}}
 <h1>{{.Site.Name}}</h1>
 {{if eq .Site.LocationKind "sftp"}}
 <p class="muted">{{.Site.Adapter}} · {{.Site.LocationUser}}@{{.Site.LocationHost}}:{{.Site.LocationPath}}</p>
@@ -1292,9 +1579,8 @@ const pageHTML = `
 <p class="muted">{{.Site.Adapter}} · {{.Site.Root}}</p>
 {{end}}
 {{if .Site.Config}}<p class="muted">Config file: {{.Site.Config}}</p>{{end}}
-{{if .FormErr}}<p class="notice bad" role="status">{{.FormErr}}</p>{{end}}
+{{if and .FormErr (ne .Focus "destinations")}}<p class="notice bad" role="status">{{.FormErr}}</p>{{end}}
 {{if .Notice}}<p class="notice{{if .NoticeBad}} bad{{end}}" role="status">{{.Notice}}</p>{{end}}
-{{if eq .Site.Status "running"}}<p class="notice" role="status">Backup in progress since {{.Site.When}}. This page refreshes until it finishes.</p>{{end}}
 <section class="card">
   <h2>Where the files are</h2>
   <p class="muted">A site is read from one place. Choose a directory on this machine, or one server. Saving replaces the previous choice. SSH uses the keys already on this machine.</p>
@@ -1319,11 +1605,15 @@ const pageHTML = `
     <button type="submit" data-pending="Saving location…">Save location</button>
   </form>
 </section>
-<section class="card">
-  {{if eq .Site.Status "running"}}
-    <p>Started {{.Site.When}}.</p>
+<section class="card" id="backup-progress"{{if or .Watch (eq .Site.Status "running")}} data-progress-url="/sites/{{.Site.ID}}/progress"{{end}}>
+  <h2>Backup</h2>
+  <div data-progress-panel{{if and (ne .Site.Status "running") (not .Watch)}} hidden{{end}}>
+    <p class="notice" role="status" data-progress-status>Backup in progress{{if .Site.When}} since {{.Site.When}}{{end}}.</p>
+    <p class="notice" role="status" data-progress-long-notice{{if not .Site.Progress.Notice}} hidden{{end}}>{{.Site.Progress.Notice}}</p>
     {{template "progress" .Site.Progress}}
-  {{else if eq .Site.Status "success"}}
+  </div>
+  <div data-progress-result{{if eq .Site.Status "running"}} hidden{{end}}>
+  {{if eq .Site.Status "success"}}
     <p class="ok">Last backup succeeded</p>
     <p>{{.Site.When}}</p>
     <p>{{.Site.Size}}</p>
@@ -1335,15 +1625,32 @@ const pageHTML = `
     <p>{{.Site.Error}}</p>
     {{if .Site.Hint}}<p>{{.Site.Hint}}</p>{{end}}
     <p class="muted">The live site was not modified.</p>
-  {{else}}
+  {{else if ne .Site.Status "running"}}
     <p>No backup yet. The first run stays in the local restic repository.</p>
   {{end}}
+  </div>
+  <h3>Stored backups on this machine</h3>
+  <p class="muted">Local restic repository: <code>{{.Site.LocalRepo}}</code>. Destinations below are separate copies of a finished backup, not this list.</p>
+  {{if .Site.Backups}}
+    <ul>
+    {{range .Site.Backups}}
+      <li>{{.When}} · {{.Size}} · Restore {{.Confidence}}</li>
+    {{end}}
+    </ul>
+  {{else}}
+    <p class="muted">None yet in the local repository.</p>
+  {{end}}
   <form method="post" action="/sites/{{.Site.ID}}/backup">
-    <button type="submit" data-pending="Backup in progress…" {{if eq .Site.Status "running"}}disabled{{end}}>{{if eq .Site.Status "running"}}Backup in progress…{{else}}Back up now{{end}}</button>
+    <button type="submit" data-pending="Starting backup…" {{if or .Watch (eq .Site.Status "running")}}disabled{{end}} data-progress-button>{{if or .Watch (eq .Site.Status "running")}}Backup in progress…{{else}}Back up now{{end}}</button>
   </form>
+  {{if .Site.CanCheckRestore}}
   <form method="post" action="/sites/{{.Site.ID}}/test-restore">
-    <button class="secondary" type="submit" data-pending="Testing restore…">Test restore into scratch</button>
+    <button class="secondary" type="submit" data-pending="Checking restore…" {{if eq .Site.Status "running"}}disabled{{end}}>Check restore</button>
   </form>
+  <p class="muted">Uses the last successful backup. Does not run a new backup. Restores into an empty scratch folder, checks every file against the manifest hashes, checks the database dump when one was captured, and confirms the live site was not modified.</p>
+  {{else}}
+  <p class="muted">After the first successful backup, Check restore can verify that archive without backing up again.</p>
+  {{end}}
 </section>
 <section class="card">
   <h2>Database</h2>
@@ -1386,7 +1693,8 @@ const pageHTML = `
 </section>
 <section class="card" id="destinations">
   <h2>Destinations</h2>
-  <p class="muted">The local repository is always written. A destination is where a finished archive is copied. Destination kinds are extensions (JSON under <code>destinations/</code>). A destination is not the server the site is read from. It is not contacted until you enable it.</p>
+  <p class="muted">The local repository is always written. A destination is where a finished archive is copied. Destination kinds are extensions (JSON under <code>destinations/</code>). A destination is not the server the site is read from. Saving checks required fields and that the destination is reachable enough to use.</p>
+  {{if and .FormErr (eq .Focus "destinations")}}<p class="notice bad" role="status">{{.FormErr}}</p>{{end}}
   {{if .Site.Destinations}}
     <ul class="dest-list">
     {{range .Site.Destinations}}
@@ -1425,7 +1733,17 @@ const pageHTML = `
       {{if $kind.Note}}<p class="muted">{{$kind.Note}}</p>{{end}}
       {{range $kind.Fields}}
       <label for="dest-{{$kind.ID}}-{{.Name}}">{{.Label}}</label>
-      <input id="dest-{{$kind.ID}}-{{.Name}}" name="{{.Name}}" value="{{$.DestDraft.Field $kind.ID .Name}}"{{if .Placeholder}} placeholder="{{.Placeholder}}"{{end}}>
+      {{if .Choices}}
+      <select id="dest-{{$kind.ID}}-{{.Name}}" name="{{.Name}}"{{if .Required}} required{{end}}>
+        <option value="">Choose a remote…</option>
+        {{$draft := $.DestDraft.Field $kind.ID .Name}}
+        {{$val := .Value $draft}}
+        {{range .Options $draft}}<option value="{{.}}"{{if eq $val .}} selected{{end}}>{{.}}</option>{{end}}
+      </select>
+      {{else}}
+      <input id="dest-{{$kind.ID}}-{{.Name}}" name="{{.Name}}" value="{{$.DestDraft.Field $kind.ID .Name}}"{{if .Placeholder}} placeholder="{{.Placeholder}}"{{end}}{{if .Required}} required{{end}}>
+      {{if eq .Name "host"}}{{if eq $kind.ID "gdrive"}}<p class="muted">No Google Drive remotes found. Run <code>rclone config</code> and create a drive remote, then reload this page.</p>{{end}}{{end}}
+      {{end}}
       {{end}}
       {{if $kind.HasCredentials}}
       <label for="dest-{{$kind.ID}}-access">{{$kind.AccessLabel}}</label>
@@ -1512,6 +1830,74 @@ const pageHTML = `
     if (destFocus) { destFocus.focus(); }
   }
   {{end}}
+  var progressRoot = document.getElementById("backup-progress");
+  var progressURL = progressRoot && progressRoot.getAttribute("data-progress-url");
+  if (progressURL) {
+    progressRoot.scrollIntoView({ block: "start" });
+    function setText(el, text) {
+      if (!el) return;
+      if (!text) { el.hidden = true; el.textContent = ""; return; }
+      el.hidden = false;
+      el.textContent = text;
+    }
+    function renderProgress(data) {
+      var panel = progressRoot.querySelector("[data-progress-panel]");
+      var result = progressRoot.querySelector("[data-progress-result]");
+      var button = progressRoot.querySelector("[data-progress-button]");
+      if (data.running) {
+        if (panel) panel.hidden = false;
+        if (result) result.hidden = true;
+        if (button) { button.disabled = true; button.textContent = "Backup in progress…"; }
+        setText(progressRoot.querySelector("[data-progress-phase]"), data.phase || "Starting the backup");
+        setText(progressRoot.querySelector("[data-progress-status]"), data.started_at ? "Backup in progress since " + data.started_at + "." : "Backup in progress.");
+        var pctEl = progressRoot.querySelector("[data-progress-pct]");
+        if (pctEl) {
+          if (data.known) {
+            pctEl.hidden = false;
+            pctEl.textContent = data.percent + "%";
+          } else {
+            pctEl.hidden = true;
+            pctEl.textContent = "";
+          }
+        }
+        setText(progressRoot.querySelector("[data-progress-long-notice]"), data.long_notice || "");
+        setText(progressRoot.querySelector("[data-progress-eta]"), data.eta ? ("Estimated time left: " + data.eta) : "");
+        setText(progressRoot.querySelector("[data-progress-eta-detail]"), data.eta_detail || "");
+        setText(progressRoot.querySelector("[data-progress-file]"), data.file || "");
+        setText(progressRoot.querySelector("[data-progress-count]"), data.count || "");
+        setText(progressRoot.querySelector("[data-progress-written]"), data.written || "");
+        setText(progressRoot.querySelector("[data-progress-limit]"), data.limit || "");
+        var bar = progressRoot.querySelector("[data-progress-bar]");
+        var fill = progressRoot.querySelector("[data-progress-fill]");
+        if (bar && fill) {
+          if (data.known) {
+            bar.classList.remove("unknown");
+            bar.setAttribute("aria-valuenow", String(data.percent));
+            fill.style.width = data.percent + "%";
+          } else {
+            bar.classList.add("unknown");
+            bar.removeAttribute("aria-valuenow");
+            fill.style.width = "";
+          }
+          bar.setAttribute("aria-valuetext", (data.phase || "Starting the backup") + (data.known ? " " + data.percent + "%" : ""));
+        }
+        return true;
+      }
+      window.location.replace("/sites/{{.Site.ID}}");
+      return false;
+    }
+    function tick() {
+      fetch(progressURL, { headers: { "Accept": "application/json" }, cache: "no-store" })
+        .then(function (res) { return res.json(); })
+        .then(function (data) {
+          if (renderProgress(data)) {
+            window.setTimeout(tick, 1000);
+          }
+        })
+        .catch(function () { window.setTimeout(tick, 2000); });
+    }
+    tick();
+  }
 })();
 </script>
 {{if .Site.Steps}}
@@ -1521,40 +1907,13 @@ const pageHTML = `
 {{end}}</pre>
 </section>
 {{end}}
-</main>
-{{template "feedback" .}}
-</body>
-</html>
-{{end}}
 
+{{template "shell-end" .}}
+{{end}}
 {{define "setup"}}
-<!doctype html>
-<html lang="en">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Set up a backup</title>
-<style>
-  body { margin: 0; background: #f3efe6; color: #1c1915; font: 16px/1.45 system-ui, sans-serif; }
-  main { max-width: 40rem; margin: 0 auto; padding: 1rem; }
-  h1 { font-size: 1.5rem; }
-  p, code { overflow-wrap: anywhere; }
-  .card { background: #fffdf8; border: 1px solid #d9d2c5; border-radius: 8px; padding: 1rem; margin: 0.75rem 0; }
-  label, input, select, button { display: block; width: 100%; box-sizing: border-box; margin: 0.35rem 0; font: inherit; }
-  button, .button { background: #0f5c57; color: white; border: 0; border-radius: 6px; padding: 0.65rem 0.8rem; text-align: center; text-decoration: none; }
-  .secondary { background: transparent; color: #0f5c57; border: 1px solid #0f5c57; }
-  .muted { color: #5c564c; }
-  .bad { color: #8c2f2f; }
-  .check { display: flex; align-items: center; gap: 0.5rem; }
-  .check input { width: auto; }
-  .actions { display: flex; gap: 0.5rem; }
-  .actions button { width: auto; }
-</style>
-</head>
-<body>
-<main>
-<p><a href="/">Sites</a></p>
-<h1>Set up a backup</h1>
+{{template "shell-start" .}}
+<h1>Start a backup</h1>
+<p class="lede">Choose a directory on this machine or one server. Matching site types apply automatically; anything else is files-only. Staying local is fine — destinations are optional.</p>
 {{if .FormErr}}<p class="notice bad" role="status">{{.FormErr}}</p>{{end}}
 {{if .Notice}}<p class="notice{{if .NoticeBad}} bad{{end}}" role="status">{{.Notice}}</p>{{end}}
 {{with .Wizard}}
@@ -1581,6 +1940,7 @@ const pageHTML = `
     <input id="remote_path" name="remote_path" value="{{.RemotePath}}" placeholder="/var/www/example">
   </div>
   <button type="submit" data-pending="Saving location…">Continue</button>
+  <p class="hint">Continuing measures how large the site looks (for a server, an rsync dry-run) so you see the likely backup size before the first run.</p>
 </form>
 {{else if eq .Step "name"}}
 <form class="card" method="post" action="/sites/{{.ID}}/setup/name">
@@ -1611,7 +1971,7 @@ const pageHTML = `
 {{else if eq .Step "destination"}}
 <form class="card" id="destinations" method="post" action="/sites/{{.ID}}/setup/destination">
   <h2>Where copies go</h2>
-  <p class="muted">The local repository is always written. A destination is where a finished archive is copied. It is not the server the files are read from, and it is not contacted until you enable it.</p>
+  <p class="muted">The local repository is always written. A destination is where a finished archive is copied. It is not the server the files are read from. Saving checks required fields and that the destination is reachable enough to use.</p>
   <label for="kind">Kind</label>
   <select id="kind" name="kind" data-switch>
     <option value="none"{{if or (not $.DestDraft) (eq $.DestDraft.Kind "") (eq $.DestDraft.Kind "none")}} selected{{end}}>This machine only</option>
@@ -1622,7 +1982,17 @@ const pageHTML = `
     {{if $kind.Note}}<p class="muted">{{$kind.Note}}</p>{{end}}
     {{range $kind.Fields}}
     <label for="dest-{{$kind.ID}}-{{.Name}}">{{.Label}}</label>
-    <input id="dest-{{$kind.ID}}-{{.Name}}" name="{{.Name}}" value="{{$.DestDraft.Field $kind.ID .Name}}"{{if .Placeholder}} placeholder="{{.Placeholder}}"{{end}}>
+    {{if .Choices}}
+    <select id="dest-{{$kind.ID}}-{{.Name}}" name="{{.Name}}"{{if .Required}} required{{end}}>
+      <option value="">Choose a remote…</option>
+      {{$draft := $.DestDraft.Field $kind.ID .Name}}
+      {{$val := .Value $draft}}
+      {{range .Options $draft}}<option value="{{.}}"{{if eq $val .}} selected{{end}}>{{.}}</option>{{end}}
+    </select>
+    {{else}}
+    <input id="dest-{{$kind.ID}}-{{.Name}}" name="{{.Name}}" value="{{$.DestDraft.Field $kind.ID .Name}}"{{if .Placeholder}} placeholder="{{.Placeholder}}"{{end}}{{if .Required}} required{{end}}>
+    {{if eq .Name "host"}}{{if eq $kind.ID "gdrive"}}<p class="muted">No Google Drive remotes found. Run <code>rclone config</code> and create a drive remote, then reload this page.</p>{{end}}{{end}}
+    {{end}}
     {{end}}
     {{if $kind.HasCredentials}}
     <label for="dest-{{$kind.ID}}-access">{{$kind.AccessLabel}}</label>
@@ -1659,8 +2029,7 @@ const pageHTML = `
 <p class="muted"><a href="{{.Edit}}">Retention and speed limits are on the site page.</a></p>
 {{end}}
 {{end}}
-</main>
-{{template "feedback" .}}
+
 <script>
 (function () {
   function apply(select) {
@@ -1696,27 +2065,26 @@ const pageHTML = `
   {{end}}
 })();
 </script>
-</body>
-</html>
+{{template "shell-end" .}}
 {{end}}
-
 {{define "progress"}}
-{{if .Phase}}
-<p>{{.Phase}}{{if .Known}} · {{.Percent}}%{{end}}</p>
-<div class="bar{{if not .Known}} unknown{{end}}" role="progressbar" aria-valuemin="0" aria-valuemax="100"{{if .Known}} aria-valuenow="{{.Percent}}"{{end}} aria-valuetext="{{.Phase}}">
-  <span{{if .Known}} style="width: {{.Percent}}%"{{end}}></span>
+<p data-progress-phase>{{if .Phase}}{{.Phase}}{{else}}Starting the backup{{end}}</p>
+<p class="progress-pct" data-progress-pct{{if not .Known}} hidden{{end}}>{{if .Known}}{{.Percent}}%{{end}}</p>
+<div class="bar{{if not .Known}} unknown{{end}}" role="progressbar" aria-valuemin="0" aria-valuemax="100"{{if .Known}} aria-valuenow="{{.Percent}}"{{end}} aria-valuetext="{{if .Phase}}{{.Phase}}{{else}}Starting the backup{{end}}" data-progress-bar>
+  <span data-progress-fill{{if .Known}} style="width: {{.Percent}}%"{{end}}></span>
 </div>
-{{if .File}}<p class="muted">{{.File}}</p>{{end}}
-{{if .Count}}<p class="muted">{{.Count}}</p>{{end}}
-{{if .Written}}<p class="muted">{{.Written}}</p>{{end}}
-{{if .Limit}}<p class="muted">{{.Limit}}</p>{{end}}
-{{end}}
+<p data-progress-eta{{if not .ETA}} hidden{{end}}>{{if .ETA}}Estimated time left: {{.ETA}}{{end}}</p>
+<p class="muted" data-progress-eta-detail{{if not .Detail}} hidden{{end}}>{{.Detail}}</p>
+<p class="muted" data-progress-file{{if not .File}} hidden{{end}}>{{.File}}</p>
+<p class="muted" data-progress-count{{if not .Count}} hidden{{end}}>{{.Count}}</p>
+<p class="muted" data-progress-written{{if not .Written}} hidden{{end}}>{{.Written}}</p>
+<p class="muted" data-progress-limit{{if not .Limit}} hidden{{end}}>{{.Limit}}</p>
 {{end}}
 
 {{define "feedback"}}
 <style>
-  .notice { background: #e7f2ef; border: 2px solid #0f5c57; border-radius: 8px; padding: 0.85rem 1rem; margin: 0.75rem 0; font-weight: 600; }
-  .notice.bad { background: #f8ecec; border-color: #8c2f2f; color: #8c2f2f; }
+  .notice { background: #e7f2ef; border: 2px solid var(--accent, #0f5c57); border-radius: 8px; padding: 0.85rem 1rem; margin: 0.75rem 0; font-weight: 600; }
+  .notice.bad { background: #f8ecec; border-color: var(--bad, #8c2f2f); color: var(--bad, #8c2f2f); }
   button[disabled] { opacity: 0.65; cursor: wait; }
 </style>
 <script>

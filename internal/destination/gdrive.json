@@ -1,16 +1,17 @@
 {
   "id": "gdrive",
   "label": "Google Drive",
-  "note": "Google Drive uses rclone on this machine. Fields are host (the rclone remote name) and remote-path (folder in Drive). Do not ask for a Google password.",
+  "note": "Google Drive uses rclone on this machine. Choose a Drive remote from rclone config, then the folder path in Drive. Do not ask for a Google password. Copies pace Drive API calls to avoid Google query quotas; for large sites, prefer your own Google client_id in rclone config.",
   "offsite": true,
   "fields": [
-    {"name": "host", "label": "rclone remote name", "required": true, "pattern": "hostname", "setup": "host", "placeholder": "gdrive"},
+    {"name": "host", "label": "Google Drive remote", "required": true, "pattern": "hostname", "setup": "host", "placeholder": "gdrive", "choices": "rclone_drive"},
     {"name": "path", "label": "Folder in Google Drive", "required": true, "pattern": "drive_path", "setup": "remote-path", "placeholder": "local-backup/site"}
   ],
   "url": "rclone:{host}:{path_trim}",
   "url_when_path_empty": "rclone:{host}:/",
   "require_tools": ["rclone"],
   "hooks": ["rclone_remote"],
+  "rclone_args": "serve restic --stdio --b2-hard-delete --drive-use-trash=false --tpslimit 4 --tpslimit-burst 4 --transfers 1 --checkers 1 --retries 10 --low-level-retries 20 --drive-pacer-min-sleep 500ms",
   "progress": "Copying to Google Drive ({host})",
   "detail": "{host}:{path_trim}"
 }

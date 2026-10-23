@@ -1,0 +1,128 @@
+{
+  "title": "Choose the visual world for BackupBinder",
+  "question": "This roll ran with catalog challengers. The assigned world is Filing Cabinet Tab Index. Keep it, take an alternate, re-roll, or take the category standard.",
+  "options": [
+    {
+      "id": "assigned",
+      "label": "Filing Cabinet Tab Index",
+      "kicker": "THE ROLL",
+      "lineage": "metal hanging-file cabinets and manila tab folders",
+      "thesis": "Sites live as labeled folders in an open drawer — the page is the drawer, not a cloud dashboard.",
+      "palette": ["#2a2e35", "#e8dcc8", "#c9a66b", "#f7f1e6", "#0d6b5c", "#1a1c20"],
+      "materials": ["manila stock", "graphite hanging rails", "typed label tape", "rubber stamp ink"],
+      "viewport": "Full-bleed open drawer; metal rails as nav; one open folder face holds BackupBinder, one headline, Get started; next hanging folder peeks as the section below.",
+      "risk": "Can read as cute office kitsch if the metal and stamp discipline go soft.",
+      "raised": [
+        {"from": "challenger-toyism", "raise": "Fixed kraft/metal/stamp palette with hard edges — no soft gradient wash left on a neutral template."},
+        {"from": "challenger-alphabet", "raise": "One dominant drawer composition owns the viewport; no equal feature-card row."},
+        {"from": "challenger-shader", "raise": "Drawer interior fills the first viewport as continuous material, not a framed mockup on white."},
+        {"from": "challenger-sixpack", "raise": "Trust facts sit as a cross-check strip on the folder face (last run / restore / destinations), not KPI cards."}
+      ],
+      "html": ".impeccable/mocks/decision/assigned.html",
+      "comp": ".impeccable/mocks/decision/assigned.webp"
+    },
+    {
+      "id": "model-pick",
+      "label": "Bank Passbook",
+      "kicker": "IMPECCABLE’S PICK",
+      "lineage": "stamped savings passbooks and teller ledgers",
+      "thesis": "Every backup run stamps the passbook — trust is a ledger you can read line by line.",
+      "palette": ["#1f2430", "#f4efe6", "#8b1e2d", "#2f6f4e", "#c5b8a0"],
+      "materials": ["ruled ledger paper", "wet stamp pads", "thread-sewn binding"],
+      "viewport": "Open passbook spread: BackupBinder on the cover edge; stamped run rows; Get started as the teller stamp pad.",
+      "risk": "Also the direction most trust-product runs land on.",
+      "html": ".impeccable/mocks/decision/model-pick.html",
+      "comp": ".impeccable/mocks/decision/model-pick.webp"
+    },
+    {
+      "id": "challenger-glazier",
+      "label": "Glazier Colorfield Partition",
+      "verdict": "competitive",
+      "lineage": "steel-framed hand-rolled glass partition walls",
+      "thesis": "Backup steps and sites as glass panes in a black glazing grid — what matters lights cobalt.",
+      "palette": ["#0e0f12", "#e8eef2", "#1a4f8b", "#c47a1a", "#6b1d1d"],
+      "materials": ["matte black glazing bars", "seeded white glass", "cobalt color fields"],
+      "viewport": "Wall elevation as the page: brand and CTA in a lit cobalt pane; nav as labeled bays; next section a lower bay row.",
+      "case": "Holds craft identification; one-pane-one-statement is clear — loses narrowly to filing for BackupBinder’s household-record metaphor.",
+      "risk": "Reads architectural-portfolio when panes stay empty of product proof.",
+      "html": ".impeccable/mocks/decision/challenger-glazier.html",
+      "comp": ".impeccable/mocks/decision/challenger-glazier.webp",
+      "hero": "https://impeccable.style/worlds/cards/craft-making-glazier-colorfield-partition-hero.webp",
+      "board": "https://impeccable.style/worlds/cards/craft-making-glazier-colorfield-partition.webp"
+    },
+    {
+      "id": "challenger-toyism",
+      "label": "Toyism Signed Plate",
+      "verdict": "declined",
+      "lineage": "Toyism collective plates",
+      "thesis": "Hard-edged shared symbols on a fixed cobalt-magenta-lemon palette.",
+      "palette": ["#0047ab", "#e4007c", "#f7e300", "#f5f5f0"],
+      "materials": ["flat enamel", "hard edges", "corner pseudonym mark"],
+      "case": "Fuses poorly: backup operators do not identify with playful collective painting.",
+      "kept": "Total palette commitment with no blending.",
+      "hero": "https://impeccable.style/worlds/cards/design-canon-toyism-signed-collective-plate-hero.webp"
+    },
+    {
+      "id": "challenger-telop",
+      "label": "Variety Telop Field",
+      "verdict": "declined",
+      "lineage": "broadcast variety-show caption fields",
+      "thesis": "Emotion-scaled outlined captions turn the frame into a live comic.",
+      "palette": ["#111111", "#ffe600", "#ff2a2a", "#ffffff"],
+      "materials": ["outlined captions", "drop shadows", "snap timing"],
+      "case": "Fuses poorly: novelty crowds product clarity for restore trust.",
+      "kept": "Hierarchy by scale and weight, not soft cards.",
+      "hero": "https://impeccable.style/worlds/cards/variety-telop-caption-field-hero.webp"
+    },
+    {
+      "id": "challenger-alphabet",
+      "label": "Alphabet Storm",
+      "verdict": "declined",
+      "lineage": "surreal letter-weather landscapes",
+      "thesis": "Letters condense into words that reshape the ground.",
+      "palette": ["#f7f7f2", "#111111", "#c0c0c0"],
+      "materials": ["monumental grotesk as matter", "paper white field"],
+      "case": "Fuses poorly: surreal weather obscures the backup contract.",
+      "kept": "One dominant transformative composition.",
+      "hero": "https://impeccable.style/worlds/cards/dream-surreal-impossible-worlds-alphabet-storm-hero.webp"
+    },
+    {
+      "id": "challenger-shader",
+      "label": "WebGL Shader Portal",
+      "verdict": "declined",
+      "lineage": "full-bleed experiential studio portals",
+      "thesis": "A living shader fills the screen; thin type floats over pixels.",
+      "palette": ["#0a0c14", "#6ee7ff", "#e8eef8"],
+      "materials": ["fragment shader ground", "film grain", "thin uppercase labels"],
+      "case": "Fuses poorly: tech spectacle fights honest, claim-light positioning.",
+      "kept": "Full-bleed environmental commitment.",
+      "hero": "https://impeccable.style/worlds/cards/webgl-shader-portal-hero.webp"
+    },
+    {
+      "id": "challenger-sixpack",
+      "label": "Night Flight Six-Pack",
+      "verdict": "declined",
+      "lineage": "aircraft night instrument panels",
+      "thesis": "Six luminous gauges hold trust when nothing outside the glass is visible.",
+      "palette": ["#0a0a0c", "#e8f0e8", "#3dff6a", "#ffb000"],
+      "materials": ["matte black panel", "radium needles", "aviation numerals"],
+      "case": "Fuses poorly: dial dashboards fight the anti-KPI product stance.",
+      "kept": "Cross-check ritual — every trust fact shows trend, not a vanity number.",
+      "hero": "https://impeccable.style/worlds/cards/signals-instruments-night-flight-six-pack-hero.webp"
+    }
+  ],
+  "reroll": { "registers": ["safer", "bolder"] },
+  "buildPath": { "value": "code", "toggle": true },
+  "canon": true,
+  "canonCard": {
+    "label": "The category standard",
+    "thesis": "What backup-tool landings ship, executed impeccably.",
+    "palette": ["#ffffff", "#111827", "#2563eb"],
+    "materials": ["clean grid", "product photography"],
+    "viewport": "Brand, headline, CTA, then a row of equal feature cards — at full craft.",
+    "risk": "Indistinguishable from the competition by design.",
+    "html": ".impeccable/mocks/decision/canon.html",
+    "comp": ".impeccable/mocks/decision/canon.webp"
+  },
+  "steer": true
+}

@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>BackupBinder - Site backups on this machine</title>
+  <meta name="description" content="BackupBinder keeps a local archive of a site on this machine. Optional remotes. Safe restore into empty scratch. Same contract for you and your agent."/>
+  <link rel="preconnect" href="https://fonts.googleapis.com"/>
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+  <link href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;650;700;800&family=Source+Sans+3:ital,wght@0,400;0,600;0,700;1,400&display=swap" rel="stylesheet"/>
+  <link rel="stylesheet" href="styles.css"/>
+</head>
+<body>
+  <a class="skip" href="#main">Skip to content</a>
+
+  <div class="cabinet" data-cabinet>
+    <header class="drawer-chrome">
+      <div class="handle" aria-hidden="true"></div>
+      <nav class="hanging-tabs" aria-label="Primary">
+        <a class="tab tab--brand" href="#top" aria-current="page">BackupBinder</a>
+        <a class="tab" href="#what">What it does</a>
+        <a class="tab" href="#how">How you use it</a>
+        <a class="tab" href="#trust">Trust</a>
+        <a class="tab" href="#start">Get started</a>
+      </nav>
+    </header>
+
+    <main id="main">
+      <section class="folder folder--hero" id="top" aria-labelledby="hero-brand">
+        <div class="folder__spine" aria-hidden="true"></div>
+        <div class="folder__face">
+          <p class="brand" id="hero-brand">BackupBinder</p>
+          <p class="subtitle">Site backups on this machine</p>
+          <h1 class="headline">Keep a site archive you can actually restore.</h1>
+          <p class="lede">Local-first backups for any directory. Optional remotes when you want them. The same contract for you and your agent, without inventing hosts, paths, or secrets.</p>
+          <div class="cta-row">
+            <a class="stamp" href="#start">Get started</a>
+            <a class="stamp stamp--ghost" href="https://github.com/mikeybeck/local-backup">GitHub</a>
+          </div>
+          <dl class="cross-check" aria-label="Trust cross-check">
+            <div>
+              <dt>Last run</dt>
+              <dd>Lives on this machine</dd>
+            </div>
+            <div>
+              <dt>Restore</dt>
+              <dd>Empty scratch only</dd>
+            </div>
+            <div>
+              <dt>Destinations</dt>
+              <dd>Optional copies</dd>
+            </div>
+          </dl>
+        </div>
+        <a class="folder-peek" href="#what">What it does</a>
+      </section>
+
+      <section class="folder folder--section" id="what" aria-labelledby="what-title">
+        <div class="folder__spine" aria-hidden="true"></div>
+        <div class="folder__tab-label" aria-hidden="true">What it does</div>
+        <div class="folder__face">
+          <h2 id="what-title">One contract: sources, snapshot, destinations, restore.</h2>
+          <p class="section-lede">BackupBinder archives a site on this machine. A site is a directory you care about: files by default, with optional addons for site types like WordPress.</p>
+          <ol class="flow">
+            <li>
+              <strong>Capture</strong>
+              <span>Files from a local path or an SFTP server (copied here first).</span>
+            </li>
+            <li>
+              <strong>Archive</strong>
+              <span>A versioned local repository. Unchanged data stored once.</span>
+            </li>
+            <li>
+              <strong>Copy out</strong>
+              <span>Optional destinations (SFTP, disk, S3, B2, Google Drive). With none enabled, the run never leaves this computer.</span>
+            </li>
+            <li>
+              <strong>Prove restore</strong>
+              <span>Test into an empty scratch directory. Never onto the live site root.</span>
+            </li>
+          </ol>
+        </div>
+      </section>
+
+      <section class="folder folder--section" id="how" aria-labelledby="how-title">
+        <div class="folder__spine" aria-hidden="true"></div>
+        <div class="folder__tab-label" aria-hidden="true">How you use it</div>
+        <div class="folder__face">
+          <h2 id="how-title">Three doors. Same backup contract.</h2>
+          <p class="section-lede">Humans and agents share one command catalog. Every command prints JSON. The localhost UI is for setup and trust; agents are not expected to drive it.</p>
+          <ul class="doors">
+            <li>
+              <h3>Localhost UI</h3>
+              <p><code>serve</code> on this machine. Set up a backup, then read last run and restore confidence.</p>
+            </li>
+            <li>
+              <h3>JSON CLI</h3>
+              <p>Scriptable setup, backup, verify, and restore. Failures are structured, not scraped from logs.</p>
+            </li>
+            <li>
+              <h3>Agent / MCP</h3>
+              <p>stdio MCP over the same tools. Identify the exact site before mutating. Never invent access fields.</p>
+            </li>
+          </ul>
+        </div>
+      </section>
+
+      <section class="folder folder--section" id="trust" aria-labelledby="trust-title">
+        <div class="folder__spine" aria-hidden="true"></div>
+        <div class="folder__tab-label" aria-hidden="true">Trust</div>
+        <div class="folder__face">
+          <h2 id="trust-title">Trust is a restore you can run, not a green light.</h2>
+          <p class="section-lede">BackupBinder refuses the shortcuts that make backups look fine while skipping the hard parts.</p>
+          <ul class="trust-list">
+            <li>Restore only into an empty scratch directory: never the live root, its parents, or the repository.</li>
+            <li>Database passwords and destination secrets stay out of site JSON and tool output.</li>
+            <li>Mutations need an exact site match: id and root, not a fuzzy name.</li>
+            <li>Local-only is a complete backup. Remotes are copies of a finished archive.</li>
+            <li>WordPress is one shipped addon. Unmatched directories stay files-only.</li>
+          </ul>
+        </div>
+      </section>
+
+      <section class="folder folder--section folder--last" id="start" aria-labelledby="start-title">
+        <div class="folder__spine" aria-hidden="true"></div>
+        <div class="folder__tab-label" aria-hidden="true">Get started</div>
+        <div class="folder__face">
+          <h2 id="start-title">Build it. Point it. Back something up.</h2>
+          <p class="section-lede">The binary is still named <code>local-backup</code>. Data lives under <code>var/</code> (or <code>--home</code>). Requires Go to build; restic on <code>PATH</code> or under <code>.tools/</code>.</p>
+          <pre class="sheet" tabindex="0"><code>git clone https://github.com/mikeybeck/local-backup.git
+cd local-backup
+go build -o bin/local-backup ./cmd/local-backup
+./bin/local-backup setup --path /path/to/site
+./bin/local-backup serve --host 127.0.0.1 --port 47831</code></pre>
+          <div class="cta-row">
+            <a class="stamp" href="https://github.com/mikeybeck/local-backup">Open the repository</a>
+            <a class="stamp stamp--ghost" href="https://github.com/mikeybeck/local-backup#run">Read the runbook</a>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <footer class="drawer-foot">
+      <p><strong>BackupBinder</strong> · Site backups on this machine</p>
+      <p class="muted">Open source. No cloud account required for a complete local backup.</p>
+    </footer>
+  </div>
+
+  <script src="main.js" defer></script>
+</body>
+</html>

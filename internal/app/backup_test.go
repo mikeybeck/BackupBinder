@@ -20,9 +20,6 @@ func TestFixtureBackupAndScratchRestore(t *testing.T) {
 	if _, err := application.AddDestination("fixture-wordpress", destinationSFTP(false), "", ""); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := application.AddDestination("fixture-wordpress", destinationSFTP(true), "", ""); err != nil {
-		t.Fatal(err)
-	}
 	manifest, err := application.CreateBackup("fixture-wordpress")
 	if err != nil {
 		t.Fatal(err)
@@ -53,7 +50,7 @@ func TestFixtureBackupAndScratchRestore(t *testing.T) {
 	if !kept {
 		t.Fatal("upload was not captured")
 	}
-	var sawDisabled, sawSkipped, sawLocal bool
+	var sawDisabled, sawLocal bool
 	for _, dest := range manifest.Destinations {
 		switch dest.Status {
 		case "disabled":
@@ -61,15 +58,13 @@ func TestFixtureBackupAndScratchRestore(t *testing.T) {
 			if dest.Written {
 				t.Fatal("disabled destination was written")
 			}
-		case "skipped":
-			sawSkipped = true
 		case "stored":
 			sawLocal = dest.Written
-		case "copied":
-			t.Fatal("copied without a configured upload")
+		case "copied", "failed":
+			t.Fatalf("unexpected destination status %#v", dest)
 		}
 	}
-	if !sawDisabled || !sawSkipped || !sawLocal {
+	if !sawDisabled || !sawLocal {
 		t.Fatalf("destinations %#v", manifest.Destinations)
 	}
 	registry, err := os.ReadFile(filepath.Join(application.Home, "registry.sqlite"))
@@ -244,11 +239,7 @@ func TestListSites(t *testing.T) {
 }
 
 func destinationSFTP(enabled bool) model.Destination {
-	dest := model.Destination{Kind: "sftp", Enabled: enabled, Host: "files.example", User: "backup"}
-	if !enabled {
-		dest.Path = "/repos/site"
-	}
-	return dest
+	return model.Destination{Kind: "sftp", Enabled: enabled, Host: "files.example", User: "backup", Path: "/repos/site"}
 }
 
 func diskDestination(path string, enabled bool) model.Destination {

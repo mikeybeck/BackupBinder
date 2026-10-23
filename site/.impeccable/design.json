@@ -1,0 +1,275 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-10-21T15:32:24+13:00",
+  "title": "Design System: BackupBinder",
+  "extensions": {
+    "colorMeta": {
+      "metal": {
+        "role": "neutral",
+        "displayName": "Drawer Metal",
+        "canonical": "#2a2e35",
+        "tonalRamp": ["#0e1014", "#1a1c20", "#2a2e35", "#3a3f48", "#5a616c", "#8a919c", "#c5cad3", "#e2e6ed"]
+      },
+      "metal-deep": {
+        "role": "neutral",
+        "displayName": "Metal Deep",
+        "canonical": "#1a1c20",
+        "tonalRamp": ["#0a0b0d", "#0e1014", "#1a1c20", "#2a2e35", "#3a3f48", "#5a616c", "#8a919c", "#c5cad3"]
+      },
+      "metal-edge": {
+        "role": "neutral",
+        "displayName": "Metal Edge",
+        "canonical": "#3a3f48",
+        "tonalRamp": ["#1a1c20", "#2a2e35", "#3a3f48", "#4a505a", "#5a616c", "#7a828e", "#a8afb8", "#d0d5dc"]
+      },
+      "manila": {
+        "role": "neutral",
+        "displayName": "Manila",
+        "canonical": "#e8dcc8",
+        "tonalRamp": ["#6b5e48", "#94846a", "#b8a888", "#d9cbb0", "#e8dcc8", "#f0e6d4", "#f7f1e6", "#fbf7f0"]
+      },
+      "manila-deep": {
+        "role": "neutral",
+        "displayName": "Manila Deep",
+        "canonical": "#d9cbb0",
+        "tonalRamp": ["#5a4e3a", "#7a6c52", "#a09070", "#c4b090", "#d9cbb0", "#e8dcc8", "#f0e6d4", "#f7f1e6"]
+      },
+      "kraft": {
+        "role": "secondary",
+        "displayName": "Kraft Brass",
+        "canonical": "#c9a66b",
+        "tonalRamp": ["#3d3220", "#6b5638", "#8f7249", "#b89555", "#c9a66b", "#d4bc94", "#e2d2b4", "#f7f2e8"]
+      },
+      "cream": {
+        "role": "neutral",
+        "displayName": "Folder Cream",
+        "canonical": "#f7f1e6",
+        "tonalRamp": ["#8a8274", "#b8b0a0", "#d4cdc0", "#e8e2d6", "#f0ebe2", "#f7f1e6", "#faf8f4", "#fdfcfb"]
+      },
+      "stamp": {
+        "role": "primary",
+        "displayName": "Stamp Teal",
+        "canonical": "#0d6b5c",
+        "tonalRamp": ["#052e28", "#0a5448", "#0d6b5c", "#128a76", "#2aab94", "#5bc4b0", "#9ad9cc", "#d4f0ea"]
+      },
+      "stamp-hover": {
+        "role": "primary",
+        "displayName": "Stamp Teal Deep",
+        "canonical": "#0a5448",
+        "tonalRamp": ["#041f1c", "#052e28", "#0a5448", "#0d6b5c", "#128a76", "#2aab94", "#5bc4b0", "#9ad9cc"]
+      },
+      "ink": {
+        "role": "neutral",
+        "displayName": "Cabinet Ink",
+        "canonical": "#1a1c20",
+        "tonalRamp": ["#0a0b0d", "#1a1c20", "#3a3530", "#5a5448", "#7a7368", "#a8a090", "#d0c8b8", "#f0ebe2"]
+      },
+      "ink-soft": {
+        "role": "neutral",
+        "displayName": "Warm Ink Soft",
+        "canonical": "#3a3530",
+        "tonalRamp": ["#1a1c20", "#2a2620", "#3a3530", "#5a5448", "#7a7368", "#a8a090", "#d0c8b8", "#f0ebe2"]
+      },
+      "muted": {
+        "role": "neutral",
+        "displayName": "File Mute",
+        "canonical": "#5a5448",
+        "tonalRamp": ["#2a2620", "#3a3530", "#5a5448", "#7a7368", "#9a9284", "#c0b8a8", "#e0d8c8", "#f7f1e6"]
+      },
+      "ok": {
+        "role": "primary",
+        "displayName": "Restore Green",
+        "canonical": "#1f6b3a",
+        "tonalRamp": ["#0d2e18", "#164f28", "#1f6b3a", "#2a8a4c", "#45a866", "#78c492", "#b0dfc0", "#e2f4e8"]
+      },
+      "focus": {
+        "role": "primary",
+        "displayName": "Focus Blue",
+        "canonical": "#1a4f8b",
+        "tonalRamp": ["#0a2038", "#12365e", "#1a4f8b", "#2868b0", "#4a88c8", "#7aadda", "#b0ccea", "#e0ecf6"]
+      },
+      "selection": {
+        "role": "neutral",
+        "displayName": "Selection Mint",
+        "canonical": "#c5e4df",
+        "tonalRamp": ["#2a6b64", "#4a948c", "#78bdb5", "#c5e4df", "#d4efec", "#e4f6f3", "#f0faf8", "#f7fcfb"]
+      },
+      "handle": {
+        "role": "neutral",
+        "displayName": "Handle Steel",
+        "canonical": "#4a505a",
+        "tonalRamp": ["#1a1c20", "#2a2e35", "#3a3f48", "#4a505a", "#5a616c", "#7a828e", "#a8afb8", "#d0d5dc"]
+      },
+      "foot": {
+        "role": "neutral",
+        "displayName": "Foot Mist",
+        "canonical": "#e2e6ed",
+        "tonalRamp": ["#3a3f48", "#5a616c", "#8a919c", "#b0b6c0", "#c5cad3", "#e2e6ed", "#eef0f4", "#f7f8fa"]
+      },
+      "foot-muted": {
+        "role": "neutral",
+        "displayName": "Foot Mute",
+        "canonical": "#c5cad3",
+        "tonalRamp": ["#3a3f48", "#5a616c", "#8a919c", "#a8afb8", "#c5cad3", "#d8dde4", "#e2e6ed", "#f0f2f5"]
+      }
+    },
+    "typographyMeta": {
+      "display": { "displayName": "Brand Display", "purpose": "Hero BackupBinder name only." },
+      "headline": { "displayName": "Hero Headline", "purpose": "Single promise under the brand." },
+      "title": { "displayName": "Section Title", "purpose": "Folder h2 headings." },
+      "body": { "displayName": "Body", "purpose": "Default readable copy on manila." },
+      "lede": { "displayName": "Lede", "purpose": "Supporting sentence under headlines." },
+      "label": { "displayName": "Typed Label", "purpose": "Uppercase chrome: cross-check, flow, stamps." },
+      "tab": { "displayName": "Hanging Tab", "purpose": "Primary nav tab labels." },
+      "mono": { "displayName": "Command Mono", "purpose": "Get-started sheet and inline code." }
+    },
+    "shadows": [
+      {
+        "name": "folder-stack",
+        "value": "inset 0 0 0 1px rgba(255,255,255,0.28), 0 10px 0 -2px #d9cbb0, 0 14px 28px rgba(0,0,0,0.28)",
+        "purpose": "Open manila folder resting in the drawer."
+      },
+      {
+        "name": "tab-rail-lip",
+        "value": "inset 0 2px 0 rgba(255,255,255,0.12), 0 3px 0 #0e1014",
+        "purpose": "Metal ledge under hanging tabs."
+      },
+      {
+        "name": "stamp-press",
+        "value": "inset 0 0 0 2px rgba(247,241,230,0.22), inset 0 -3px 0 rgba(0,0,0,0.18), 2px 3px 0 rgba(26,28,32,0.35)",
+        "purpose": "Rubber-stamp CTA at rest."
+      },
+      {
+        "name": "stamp-press-hover",
+        "value": "inset 0 0 0 2px rgba(247,241,230,0.28), inset 0 -2px 0 rgba(0,0,0,0.16), 3px 5px 0 rgba(26,28,32,0.28)",
+        "purpose": "Rubber-stamp CTA on hover lift."
+      },
+      {
+        "name": "handle-inset",
+        "value": "inset 0 -1px 0 rgba(255,255,255,0.12)",
+        "purpose": "Drawer pull bar highlight."
+      }
+    ],
+    "motion": [
+      {
+        "name": "ease-cabinet",
+        "value": "cubic-bezier(0.22, 1, 0.36, 1)",
+        "purpose": "Default easing for tabs, stamps, peek, and hero entrance."
+      },
+      {
+        "name": "hero-in",
+        "value": "opacity 820ms + translateY(14px) scale(0.992) → none",
+        "purpose": "Single authored hero folder entrance; skipped when prefers-reduced-motion."
+      },
+      {
+        "name": "chrome-hover",
+        "value": "160ms transform/background",
+        "purpose": "Tab, peek, and stamp hover lift."
+      }
+    ],
+    "breakpoints": [
+      { "name": "compact", "value": "720px" }
+    ]
+  },
+  "components": [
+    {
+      "name": "Primary Stamp",
+      "kind": "button",
+      "refersTo": "stamp-primary",
+      "description": "Rubber-stamp CTA for Get started / Open the repository.",
+      "html": "<a class=\"ds-stamp\" href=\"#start\">Get started</a>",
+      "css": ".ds-stamp { display: inline-block; font-family: \"Archivo\", system-ui, sans-serif; font-weight: 800; font-size: 0.95rem; letter-spacing: 0.06em; text-transform: uppercase; text-decoration: none; color: #f7f1e6; background: radial-gradient(120% 80% at 20% 20%, rgba(255,255,255,0.14), transparent 45%), #0d6b5c; border: 3px solid #1a1c20; padding: 0.85rem 1.25rem; transform: rotate(-1.4deg); box-shadow: inset 0 0 0 2px rgba(247,241,230,0.22), inset 0 -3px 0 rgba(0,0,0,0.18), 2px 3px 0 rgba(26,28,32,0.35); transition: background 160ms cubic-bezier(0.22,1,0.36,1), transform 160ms cubic-bezier(0.22,1,0.36,1), box-shadow 160ms cubic-bezier(0.22,1,0.36,1); } .ds-stamp:hover { background: radial-gradient(120% 80% at 20% 20%, rgba(255,255,255,0.16), transparent 45%), #0a5448; transform: rotate(-0.3deg) translateY(-2px); box-shadow: inset 0 0 0 2px rgba(247,241,230,0.28), inset 0 -2px 0 rgba(0,0,0,0.16), 3px 5px 0 rgba(26,28,32,0.28); } .ds-stamp:focus-visible { outline: 2px solid #1a4f8b; outline-offset: 3px; }"
+    },
+    {
+      "name": "Ghost Stamp",
+      "kind": "button",
+      "refersTo": "stamp-ghost",
+      "description": "Secondary dashed stamp for GitHub / runbook.",
+      "html": "<a class=\"ds-stamp-ghost\" href=\"https://github.com/mikeybeck/local-backup\">GitHub</a>",
+      "css": ".ds-stamp-ghost { display: inline-block; font-family: \"Archivo\", system-ui, sans-serif; font-weight: 800; font-size: 0.95rem; letter-spacing: 0.06em; text-transform: uppercase; text-decoration: none; color: #0d6b5c; background: transparent; border: 3px dashed #1a1c20; padding: 0.85rem 1.25rem; transform: rotate(0.8deg); box-shadow: none; transition: background 160ms cubic-bezier(0.22,1,0.36,1), transform 160ms cubic-bezier(0.22,1,0.36,1); } .ds-stamp-ghost:hover { background: rgba(13,107,92,0.08); transform: rotate(0deg) translateY(-2px); } .ds-stamp-ghost:focus-visible { outline: 2px solid #1a4f8b; outline-offset: 3px; }"
+    },
+    {
+      "name": "Hanging Tab",
+      "kind": "nav",
+      "refersTo": "hanging-tab",
+      "description": "Primary nav tab hanging from the metal rail.",
+      "html": "<nav class=\"ds-tabs\" aria-label=\"Primary\"><a class=\"ds-tab ds-tab--active\" href=\"#top\" aria-current=\"page\">BackupBinder</a><a class=\"ds-tab\" href=\"#what\">What it does</a></nav>",
+      "css": ".ds-tabs { display: flex; flex-wrap: wrap; gap: 0.4rem 0.5rem; align-items: flex-end; } .ds-tab { font-family: \"Archivo\", system-ui, sans-serif; font-size: 0.875rem; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; text-decoration: none; color: #1a1c20; background: #d9cbb0; border: 2px solid #1a1c20; border-bottom: 0; border-radius: 5px 5px 0 0; padding: 0.6rem 0.9rem 0.55rem; transition: background 160ms cubic-bezier(0.22,1,0.36,1), transform 160ms cubic-bezier(0.22,1,0.36,1); } .ds-tab:hover { background: #c9a66b; transform: translateY(-2px); } .ds-tab--active { background: #c9a66b; font-weight: 800; } .ds-tab:focus-visible { outline: 2px solid #1a4f8b; outline-offset: 3px; }"
+    },
+    {
+      "name": "Folder",
+      "kind": "card",
+      "refersTo": "folder",
+      "description": "Manila section folder with kraft spine.",
+      "html": "<section class=\"ds-folder\"><div class=\"ds-folder__spine\" aria-hidden=\"true\"></div><div class=\"ds-folder__tab\">What it does</div><div class=\"ds-folder__face\"><h2>One contract: sources, snapshot, destinations, restore.</h2><p>Local-first archives on this machine.</p></div></section>",
+      "css": ".ds-folder { position: relative; background: #e8dcc8; border: 3px solid #1a1c20; border-radius: 0 10px 4px 4px; box-shadow: inset 0 0 0 1px rgba(255,255,255,0.28), 0 10px 0 -2px #d9cbb0, 0 14px 28px rgba(0,0,0,0.28); color: #1a1c20; font-family: \"Source Sans 3\", system-ui, sans-serif; } .ds-folder__spine { position: absolute; left: 0; top: 0; bottom: 0; width: 0.85rem; background: #c9a66b; border-right: 3px solid #1a1c20; } .ds-folder__tab { position: absolute; top: -0.9rem; left: 2.25rem; font-family: \"Archivo\", system-ui, sans-serif; font-size: 0.8rem; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; background: #c9a66b; border: 2px solid #1a1c20; border-bottom: 0; border-radius: 4px 4px 0 0; padding: 0.35rem 0.75rem; } .ds-folder__face { padding: 1.75rem 1.5rem 1.75rem 2.5rem; } .ds-folder__face h2 { margin: 0; font-family: \"Archivo\", system-ui, sans-serif; font-size: 1.45rem; font-weight: 800; letter-spacing: -0.02em; line-height: 1.2; max-width: 22ch; } .ds-folder__face p { margin: 1rem 0 0; color: #3a3530; max-width: 38rem; }"
+    },
+    {
+      "name": "Command Sheet",
+      "kind": "custom",
+      "refersTo": "sheet",
+      "description": "Cream inset for get-started shell commands.",
+      "html": "<pre class=\"ds-sheet\" tabindex=\"0\"><code>go build -o bin/local-backup ./cmd/local-backup</code></pre>",
+      "css": ".ds-sheet { margin: 0; padding: 1.15rem 1.25rem; max-width: 44rem; overflow-x: auto; background: #f7f1e6; border: 3px solid #1a1c20; font-family: ui-monospace, \"Cascadia Code\", \"SF Mono\", Menlo, monospace; font-size: 0.88rem; line-height: 1.55; color: #1a1c20; box-shadow: inset 0 0 0 1px rgba(255,255,255,0.4); } .ds-sheet:focus-visible { outline: 2px solid #1a4f8b; outline-offset: 3px; } .ds-sheet code { background: none; border: 0; padding: 0; font-size: inherit; color: inherit; }"
+    },
+    {
+      "name": "Folder Peek",
+      "kind": "custom",
+      "refersTo": "folder-peek",
+      "description": "Next-section hanging strip on the hero folder.",
+      "html": "<a class=\"ds-peek\" href=\"#what\">What it does</a>",
+      "css": ".ds-peek { display: flex; align-items: center; height: 2.15rem; padding: 0 1.25rem; font-family: \"Archivo\", system-ui, sans-serif; font-size: 0.8rem; font-weight: 800; letter-spacing: 0.07em; text-transform: uppercase; text-decoration: none; color: #1a1c20; background: #d9cbb0; border: 3px solid #1a1c20; border-bottom: 0; border-radius: 7px 7px 0 0; box-shadow: inset 0 1px 0 rgba(255,255,255,0.35); transition: transform 160ms cubic-bezier(0.22,1,0.36,1), background 160ms cubic-bezier(0.22,1,0.36,1); } .ds-peek:hover { background: #c9a66b; transform: translateY(-3px); } .ds-peek:focus-visible { outline: 2px solid #1a4f8b; outline-offset: 3px; }"
+    },
+    {
+      "name": "Cross-check",
+      "kind": "custom",
+      "refersTo": "cross-check",
+      "description": "Hero trust strip: typed labels, not metric cards.",
+      "html": "<dl class=\"ds-cross\" aria-label=\"Trust cross-check\"><div><dt>Last run</dt><dd>Lives on this machine</dd></div><div><dt>Restore</dt><dd>Empty scratch only</dd></div></dl>",
+      "css": ".ds-cross { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.85rem 1.25rem; margin: 0; padding-top: 1.1rem; border-top: 2px solid #1a1c20; max-width: 36rem; font-family: \"Source Sans 3\", system-ui, sans-serif; } .ds-cross dt { font-family: \"Archivo\", system-ui, sans-serif; font-size: 0.78rem; font-weight: 800; letter-spacing: 0.06em; text-transform: uppercase; color: #1a1c20; } .ds-cross dd { margin: 0.25rem 0 0; color: #5a5448; font-size: 0.95rem; }"
+    },
+    {
+      "name": "Trust List",
+      "kind": "custom",
+      "refersTo": "trust-list",
+      "description": "Ruled trust commitments with restore-green square markers.",
+      "html": "<ul class=\"ds-trust\"><li>Restore only into an empty scratch directory.</li><li>Local-only is a complete backup.</li></ul>",
+      "css": ".ds-trust { list-style: none; margin: 0; padding: 0; max-width: 40rem; border-top: 2px solid #1a1c20; font-family: \"Source Sans 3\", system-ui, sans-serif; color: #3a3530; } .ds-trust li { position: relative; padding: 0.95rem 0 0.95rem 1.5rem; border-bottom: 1px solid rgba(26,28,32,0.18); } .ds-trust li::before { content: \"\"; position: absolute; left: 0; top: 1.3rem; width: 0.65rem; height: 0.65rem; background: #1f6b3a; border: 2px solid #1a1c20; }"
+    }
+  ],
+  "narrative": {
+    "northStar": "Filing Cabinet Tab Index",
+    "overview": "The marketing site is an open graphite filing-cabinet drawer: hanging manila tabs for navigation, stacked kraft-spined folders for sections, and a rubber-stamp teal CTA. It reads as household record-keeping on this machine — sites as labeled folders — not a cloud backup dashboard of equal feature cards.\n\nDepth comes from metal drawer chrome, hard folder borders, stacked manila layers, and a slightly skewed stamp. Typography pairs Archivo (tabs, brand, stamps, labels) with Source Sans 3 (body). Soft full-page gradient washes, icon-card grids, and system display faces are out of world.",
+    "keyCharacteristics": [
+      "Full-bleed graphite metal drawer; manila folder faces with kraft spine and tab",
+      "Hanging uppercase tabs as primary nav; brand is a kraft tab and hero display name",
+      "Rubber-stamp primary CTA (solid teal, hard border, slight rotate); dashed ghost secondary",
+      "Trust as typed cross-check labels and ruled lists — not metric cards",
+      "Archivo + Source Sans 3; hard metal-deep borders throughout"
+    ],
+    "rules": [
+      { "name": "The Stamp Is the Accent Rule", "body": "Teal appears on CTAs (and ghost-stamp text). Kraft marks tabs, spines, and structural labels — do not swap their jobs or flood the page with either.", "section": "colors" },
+      { "name": "The Manila Ground Rule", "body": "Content lives on manila folder faces inside the metal drawer. Cream is for the command sheet inset, not a second full-page background.", "section": "colors" },
+      { "name": "The No Soft Wash Rule", "body": "Cabinet depth is a hard metal gradient and stacked folders. Do not add decorative soft color washes behind sections.", "section": "colors" },
+      { "name": "The Brand Speaks First Rule", "body": "In the hero, BackupBinder is display-scale; the headline must not overpower it. No kicker or eyebrow above the brand or headline.", "section": "typography" },
+      { "name": "The Typed Label Rule", "body": "Uppercase Archivo labels are for chrome (tabs, stamps, cross-check keys, flow steps). Body sentences stay sentence case in Source Sans 3.", "section": "typography" },
+      { "name": "The Hard Edge Rule", "body": "Folders, tabs, stamps, and the cream sheet use 2–3px metal-deep borders. Do not substitute soft shadow-only cards for that stroke language.", "section": "elevation" },
+      { "name": "The Stamp Offset Rule", "body": "Hard offset shadows belong on the rubber stamp (and folder stack geometry), not as a generic card costume across the page.", "section": "elevation" },
+      { "name": "The Open Tab Rule", "body": "Hanging tabs and peeks never close their bottom edge — they hang from the metal rail or the folder face.", "section": "shapes" }
+    ],
+    "dos": [
+      "Do keep the first viewport as one open folder: brand, one headline, one lede, stamp CTA group, cross-check, and next-folder peek.",
+      "Do use hanging tabs for in-page nav and kraft for the active/brand tab.",
+      "Do express sequences as ruled flow/doors/trust lists, not icon+heading card grids.",
+      "Do reserve stamp teal for CTAs and kraft for structural cabinet cues.",
+      "Do honor prefers-reduced-motion (instant hero in; no scroll hijacking)."
+    ],
+    "donts": [
+      "Don't rebuild this as the localhost Household Binder Operate UI (system UI sans, paper pane, left rail) — that system lives in the repo-root DESIGN.md.",
+      "Don't add kickers/eyebrows above brand or headlines.",
+      "Don't introduce soft purple/indigo washes, glass blurs, or metric/stat strips in the hero.",
+      "Don't use emoji or glyph icons for trust markers; keep the square ok markers or typed labels.",
+      "Don't invent testimonials, customers, or benchmarks; WordPress stays one addon, not the product story."
+    ]
+  }
+}

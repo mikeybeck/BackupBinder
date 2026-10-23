@@ -1,63 +1,47 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="utf-8">
-<title>Local backup — Household Binder</title>
+<meta charset="utf-8"/>
+<title>BackupBinder — Passbook</title>
+<link href="https://fonts.googleapis.com/css2?family=Libre+Franklin:wght@500;700;800&family=IBM+Plex+Mono:wght@500&display=swap" rel="stylesheet"/>
 <style>
-  * { box-sizing: border-box; margin: 0; }
-  body {
-    width: 1440px; height: 900px; overflow: hidden;
-    background: #f2efe8; color: #1e2430;
-    font: 16px/1.45 system-ui, sans-serif;
-  }
-  .shell { display: grid; grid-template-columns: 220px 1fr; height: 900px; }
-  aside {
-    background: #1e2430; color: #f2efe8; padding: 1.5rem 1rem;
-    display: flex; flex-direction: column; gap: 0.35rem;
-  }
-  .brand { font-weight: 600; font-size: 1.1rem; margin-bottom: 1.5rem; padding: 0 0.5rem; }
-  .tab {
-    padding: 0.7rem 0.85rem; border-radius: 6px 0 0 6px; color: #c8cdd6;
-    text-decoration: none;
-  }
-  .tab.active { background: #f2efe8; color: #1e2430; font-weight: 600; }
-  .tab-accent { margin-top: auto; background: #0f5c57; color: #fff; text-align: center; border-radius: 6px; padding: 0.75rem; text-decoration: none; font-weight: 600; }
-  main { padding: 2.25rem 2.75rem; }
-  .tabs-meta { color: #6b7280; font-size: 0.9rem; margin-bottom: 0.5rem; }
-  h1 { font-size: 1.75rem; margin-bottom: 0.4rem; }
-  .lede { color: #4b5563; max-width: 38rem; margin-bottom: 1.75rem; }
-  .card {
-    background: #fff; border: 1px solid #ddd6c8; border-radius: 8px;
-    padding: 1.5rem; max-width: 640px; box-shadow: 0 1px 0 #e8e2d6;
-  }
-  .card h2 { font-size: 1.05rem; margin-bottom: 0.6rem; }
-  .card p { color: #4b5563; margin-bottom: 1.25rem; }
-  .btn {
-    background: #0f5c57; color: #fff; border: 0; border-radius: 6px;
-    padding: 0.7rem 1.1rem; font: inherit; font-weight: 600;
-  }
-  .hint { margin-top: 1rem; font-size: 0.88rem; color: #6b7280; }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{width:1440px;height:900px;overflow:hidden;font-family:"Libre Franklin",system-ui,sans-serif;background:#1f2430;color:#1f2430}
+  .spread{display:grid;grid-template-columns:1fr 1fr;height:100%;gap:0;padding:40px 56px}
+  .cover,.page{background:#f4efe6;border:3px solid #1f2430;box-shadow:8px 8px 0 #0d1016}
+  .cover{padding:48px 40px;display:flex;flex-direction:column;justify-content:space-between;background:#f4efe6 linear-gradient(90deg,#c5b8a0 0 18px,#f4efe6 18px)}
+  .brand{font-size:48px;font-weight:800;letter-spacing:-.03em}
+  .sub{font-size:14px;font-weight:500;color:#5a5448;margin-top:8px}
+  .stamp{align-self:flex-start;border:3px solid #8b1e2d;color:#8b1e2d;font-family:"IBM Plex Mono",monospace;font-size:13px;font-weight:500;padding:10px 14px;transform:rotate(-3deg)}
+  .page{padding:40px 36px;background:repeating-linear-gradient(#f4efe6,#f4efe6 31px,#d8d0c2 32px)}
+  h1{font-size:34px;font-weight:800;line-height:1.2;max-width:16ch;margin-bottom:16px;background:#f4efe6}
+  .lede{font-size:16px;line-height:1.4;max-width:32ch;margin-bottom:22px;background:#f4efe6}
+  .cta{display:inline-block;background:#8b1e2d;color:#f4efe6;font-weight:700;padding:12px 18px;border:3px solid #1f2430;text-decoration:none}
+  table{width:100%;margin-top:28px;border-collapse:collapse;font-family:"IBM Plex Mono",monospace;font-size:12px;background:#f4efe6}
+  td{padding:8px 6px;border-bottom:1px solid #1f2430}
+  .ok{color:#2f6f4e;font-weight:700}
 </style>
 </head>
 <body>
-<div class="shell">
-  <aside>
-    <div class="brand">Local backup</div>
-    <a class="tab active" href="#">Setup</a>
-    <a class="tab" href="#">Sites</a>
-    <a class="tab-accent" href="#">Set up a backup</a>
-  </aside>
-  <main>
-    <p class="tabs-meta">Tab · Setup</p>
-    <h1>Start a backup</h1>
-    <p class="lede">Choose a directory on this machine or one server. Site types are addons; unmatched paths stay files-only. Staying local is fine — destinations are optional.</p>
-    <div class="card">
-      <h2>Where are the files?</h2>
-      <p>One place to read from. SSH uses keys already on this machine. Nothing leaves this computer until you enable another destination.</p>
-      <button class="btn">Continue</button>
-      <p class="hint">After a backup exists, open the Sites tab for last run and restore confidence.</p>
-    </div>
-  </main>
-</div>
+  <div class="spread">
+    <aside class="cover">
+      <div>
+        <div class="brand">BackupBinder</div>
+        <p class="sub">Site backups on this machine</p>
+      </div>
+      <div class="stamp">ACCOUNT OPEN</div>
+    </aside>
+    <main class="page">
+      <h1>Keep a site archive you can actually restore.</h1>
+      <p class="lede">Local-first backups for any directory. Optional remotes. Same contract for you and your agent.</p>
+      <a class="cta" href="#start">Get started</a>
+      <table>
+        <tr><td>RUN</td><td>local</td><td class="ok">OK</td></tr>
+        <tr><td>RESTORE</td><td>scratch</td><td class="ok">PROVEN</td></tr>
+        <tr><td>REMOTE</td><td>optional</td><td>—</td></tr>
+      </table>
+    </main>
+  </div>
 </body>
+<!-- round a6b19ae7 -->
 </html>

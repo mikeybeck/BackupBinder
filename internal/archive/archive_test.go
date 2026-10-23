@@ -1,8 +1,11 @@
 package archive
 
 import (
+	"os"
+	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"local-backup/internal/fail"
 	"local-backup/internal/model"
@@ -38,6 +41,74 @@ func TestRcloneDestinationHintMissingRemote(t *testing.T) {
 	}
 	if !strings.Contains(fe.Hint, "rclone config") || !strings.Contains(fe.Hint, "'gdrive'") {
 		t.Fatal(fe.Hint)
+	}
+}
+
+func TestRcloneDestinationHintQuota(t *testing.T) {
+	stderr := `rclone: 2026/10/19 16:18:30 ERROR : data/8e/8e0b: Post request put error: googleapi: Error 403: Quota exceeded for quota metric 'Queries' and limit 'Previous quota: Requests per minute'
+Fatal: copy to rclone:gdrive:local-backup/wpfoundry.app failed`
+	err := destinationCopyError("rclone:gdrive:local-backup/wpfoundry.app", "copy", stderr)
+	fe, ok := err.(*fail.Error)
+	if !ok {
+		t.Fatal(err)
+	}
+	if !strings.Contains(fe.Message, "rate-limited") {
+		t.Fatal(fe.Message)
+	}
+	if !strings.Contains(fe.Hint, "15 minutes") || !strings.Contains(fe.Hint, "client_id") {
+		t.Fatal(fe.Hint)
+	}
+}
+
+func TestFirstUsefulLineSkipsRcloneNotice(t *testing.T) {
+	stderr := "rclone: 2026/10/19 14:50:49 NOTICE: gdrive: shared client_id\nFatal: copy to rclone:gdrive:site failed: context deadline exceeded\n"
+	got := firstUsefulLine(stderr)
+	if !strings.Contains(got, "Fatal") || strings.Contains(got, "NOTICE") {
+		t.Fatal(got)
+	}
+}
+
+func TestCopyTimeoutScalesWithUploadLimit(t *testing.T) {
+	unlimited := Runner{}.copyTimeout()
+	if unlimited != 2*time.Hour {
+		t.Fatal(unlimited)
+	}
+	limited := Runner{LimitUpload: 100}.copyTimeout()
+	// 16 GiB at 100 KiB/s is well above 2 hours.
+	if limited <= 2*time.Hour || limited > 24*time.Hour {
+		t.Fatal(limited)
+	}
+}
+
+func TestLockHolderGone(t *testing.T) {
+	stderr := "unable to create lock in backend: repository is already locked by PID 3645610 on mikey-think by mikey (UID 1000, GID 1000)\nlock was created at 2026-10-20 10:47:33 (4h7m3.237511364s ago)\nstorage ID 57c68fd3"
+	err := &fail.Error{Message: "restic forget failed.", Stderr: stderr}
+	if !IsRepoLocked(err) {
+		t.Fatal("expected locked")
+	}
+	if !lockHolderGone(err) {
+		t.Fatal("expected dead PID to clear")
+	}
+	live := &fail.Error{Stderr: "repository is already locked by PID " + strconv.Itoa(os.Getpid()) + " on host"}
+	if lockHolderGone(live) {
+		t.Fatal("live PID should not clear")
+	}
+	hint := retentionLockHint(stderr)
+	if !strings.Contains(hint, "leftover") {
+		t.Fatal(hint)
+	}
+}
+
+func TestParseCopyLine(t *testing.T) {
+	st, ok := ParseCopyLine(`[0:12] 75.00%  3 / 4 packs copied`)
+	if !ok || !st.HasPercent || st.Percent < 0.74 || st.Percent > 0.76 || st.FilesDone != 3 || st.FilesTotal != 4 {
+		t.Fatalf("%#v", st)
+	}
+	if st.File != "3 of 4 packs" {
+		t.Fatal(st.File)
+	}
+	if _, ok := ParseCopyLine(`snapshot abc saved`); ok {
+		t.Fatal("expected non-progress")
 	}
 }
 

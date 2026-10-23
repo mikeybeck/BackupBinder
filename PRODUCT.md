@@ -2,6 +2,12 @@
 
 <!-- impeccable:product-schema 1 -->
 
+## Brand
+
+- **Name:** BackupBinder
+- **Subtitle:** Site backups on this machine
+- **Binary (current):** `local-backup` — rename deferred; marketing and product docs use BackupBinder
+
 ## Platform
 
 web
@@ -12,7 +18,7 @@ Anyone who wants to back up their files with absolute minimum hassle. They may u
 
 ## Product Purpose
 
-Local backup keeps a restic archive of a site on this machine. A site has sources, a snapshot, destinations, and a restore procedure. The product is that backup contract for any directory of files — not a WordPress host and not tied to any one CMS.
+BackupBinder keeps a restic archive of a site on this machine. A site has sources, a snapshot, destinations, and a restore procedure. The product is that backup contract for any directory of files — not a WordPress host and not tied to any one CMS.
 
 Success means both: the operator trusts they can restore, and an agent can set up and run backups without inventing hosts, paths, or secrets.
 
@@ -39,14 +45,14 @@ Same backup contract for humans and agents (JSON CLI and MCP share one catalog).
 - Never invent access fields; SFTP uses existing SSH keys (no SSH passwords)
 - Never print database passwords, access keys, secret keys, or restic passwords
 - Omit from agent/MCP unless designed later: arbitrary shell, raw prune/delete-repo, key export, downloading full archives into chat
-- Undecided for design: whether marketing or docs surfaces exist beyond the product binary and README — none confirmed
+- Marketing surface: static landing under `site/` (Persuade), hosted on Cloudflare Pages as project `backupbinder` (https://backupbinder.pages.dev; custom domain backupbinder.com). Localhost Operate UI remains a separate world. Do not invent testimonials, customers, benchmarks, or capabilities.
 
 ## Evidence on Hand
 
 - Product and agent contracts: `README.md`, `AGENTS.md`
 - Runnable localhost UI: `internal/ui/ui.go` (embedded HTML)
 - Shipped WordPress addon + fixture: `internal/addon/wordpress.json`, `fixtures/wordpress-site` (example only; not the product default)
-- No testimonials, case studies, press, logos, or marketing claims on hand — future work must not fabricate them
+- Marketing: `site/` landing for BackupBinder — no testimonials, case studies, press, or logos on hand; do not fabricate them
 
 ## Product Principles
 

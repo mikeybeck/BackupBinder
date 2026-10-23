@@ -67,8 +67,11 @@ type Kind struct {
 	URLWhenPrefixEmpty string       `json:"url_when_prefix_empty,omitempty"`
 	RequireTools       []string     `json:"require_tools,omitempty"`
 	Hooks              []string     `json:"hooks,omitempty"`
-	Progress           string       `json:"progress,omitempty"`
-	Detail             string       `json:"detail,omitempty"`
+	// RcloneArgs replaces restic's default rclone.args. Must keep "serve restic --stdio"
+	// (and usually --b2-hard-delete); extra flags for Drive pacing go after that.
+	RcloneArgs string `json:"rclone_args,omitempty"`
+	Progress   string `json:"progress,omitempty"`
+	Detail     string `json:"detail,omitempty"`
 }
 
 // Field is one form/agent input on a kind.
@@ -79,6 +82,8 @@ type Field struct {
 	Pattern     string `json:"pattern"`
 	Setup       string `json:"setup,omitempty"`
 	Placeholder string `json:"placeholder,omitempty"`
+	// Choices is a named option source for the UI (for example rclone_drive).
+	Choices string `json:"choices,omitempty"`
 }
 
 // Credentials maps access/secret form values into an env file.
@@ -169,11 +174,18 @@ func IDs() string {
 	return strings.Join(ids, "|")
 }
 
-// Validate checks field patterns, hooks, and required tools.
+// Validate checks required fields, field patterns, hooks, and required tools.
 func (k Kind) Validate(site model.Site, repo string, dest model.Destination) error {
 	for _, field := range k.Fields {
 		value := fieldValue(dest, field.Name)
 		if value == "" {
+			if field.Required {
+				label := field.Label
+				if label == "" {
+					label = field.Name
+				}
+				return fail.New("bad_destination", label+" is required.")
+			}
 			continue
 		}
 		if err := matchPattern(field, value); err != nil {
@@ -324,7 +336,7 @@ func (k Kind) CheckAccess(dest model.Destination, contact bool) error {
 		return nil
 	}
 	if dest.Host == "" {
-		return nil
+		return fail.New("bad_destination", "Google Drive remote is required.")
 	}
 	program, err := FindTool("rclone")
 	if err != nil {
@@ -349,37 +361,129 @@ func (k Kind) RcloneProgram() (string, error) {
 	return "", nil
 }
 
+// RcloneGlobalOpts returns restic -o flags for rclone backends (program path and args).
+func (k Kind) RcloneGlobalOpts() []string {
+	var opts []string
+	if program, err := k.RcloneProgram(); err == nil && program != "" {
+		opts = append(opts, "-o", "rclone.program="+program)
+	}
+	if args := strings.TrimSpace(k.RcloneArgs); args != "" {
+		opts = append(opts, "-o", "rclone.args="+args)
+	}
+	return opts
+}
+
 func checkRcloneRemoteConfigured(program, name string) error {
-	out, err := exec.Command(program, "listremotes").CombinedOutput()
+	remotes, err := listRcloneRemotes(program, "")
+	if err != nil {
+		return err
+	}
+	want := strings.TrimSuffix(strings.TrimSpace(name), ":")
+	for _, remote := range remotes {
+		if remote == want {
+			return nil
+		}
+	}
+	return fail.New("bad_destination",
+		"Google Drive / rclone remote "+quoteRemote(name)+" is not configured. Run rclone config and create a Google Drive remote named "+quoteRemote(name)+".")
+}
+
+// ListRcloneRemotes returns configured rclone remote names without a trailing colon.
+// When backendType is set (for example "drive"), only that backend is returned.
+func ListRcloneRemotes(backendType string) ([]string, error) {
+	program, err := FindTool("rclone")
+	if err != nil {
+		return nil, err
+	}
+	return listRcloneRemotes(program, backendType)
+}
+
+// FieldChoices resolves a field's Choices token into selectable values for the UI.
+func FieldChoices(token string) []string {
+	switch token {
+	case "rclone_drive":
+		remotes, err := ListRcloneRemotes("drive")
+		if err != nil {
+			return nil
+		}
+		return remotes
+	case "rclone_remotes":
+		remotes, err := ListRcloneRemotes("")
+		if err != nil {
+			return nil
+		}
+		return remotes
+	default:
+		return nil
+	}
+}
+
+// ApplyDefaults fills empty destination fields when a safe default exists.
+// For Google Drive, a blank host becomes the only configured drive remote.
+func (k Kind) ApplyDefaults(dest *model.Destination) {
+	if dest == nil || dest.Host != "" || !k.HasHook("rclone_remote") {
+		return
+	}
+	remotes, err := ListRcloneRemotes("drive")
+	if err != nil || len(remotes) != 1 {
+		return
+	}
+	dest.Host = remotes[0]
+}
+
+func listRcloneRemotes(program, backendType string) ([]string, error) {
+	args := []string{"listremotes"}
+	if backendType != "" {
+		args = append(args, "--type", backendType, "--exact")
+	}
+	out, err := exec.Command(program, args...).CombinedOutput()
 	if err != nil {
 		detail := strings.TrimSpace(string(out))
 		if detail == "" {
 			detail = err.Error()
 		}
-		return fail.New("bad_destination", "Could not list rclone remotes. "+detail)
+		return nil, fail.New("bad_destination", "Could not list rclone remotes. "+detail)
 	}
-	if !rcloneRemoteListed(string(out), name) {
-		return fail.New("bad_destination",
-			"Google Drive / rclone remote "+quoteRemote(name)+" is not configured. Run rclone config and create a Google Drive remote named "+quoteRemote(name)+".")
+	return parseRcloneRemotes(string(out)), nil
+}
+
+func parseRcloneRemotes(listremotesOut string) []string {
+	var remotes []string
+	for _, line := range strings.Split(listremotesOut, "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		// Plain listremotes prints "name:". --long prints "name: type …".
+		name := strings.TrimSpace(strings.SplitN(line, ":", 2)[0])
+		if name == "" {
+			continue
+		}
+		remotes = append(remotes, name)
 	}
-	return nil
+	return remotes
 }
 
 func rcloneRemoteListed(listremotesOut, name string) bool {
-	want := strings.TrimSuffix(strings.TrimSpace(name), ":") + ":"
-	for _, line := range strings.Split(listremotesOut, "\n") {
-		if strings.TrimSpace(line) == want {
+	want := strings.TrimSuffix(strings.TrimSpace(name), ":")
+	for _, remote := range parseRcloneRemotes(listremotesOut) {
+		if remote == want {
 			return true
 		}
 	}
 	return false
 }
 
+// rcloneProbeTimeout bounds the preflight `rclone about` call.
+// On the shared Google Drive client_id, about often takes longer than 30s
+// and still succeeds. A 30s cutoff made create_backup refuse a remote the copy can use.
+var rcloneProbeTimeout = 2 * time.Minute
+
 func probeRcloneRemote(program, name string) error {
 	// Probe the remote root only so a missing folder path is not a false failure;
 	// restic creates the repository path on first copy.
 	target := strings.TrimSuffix(name, ":") + ":"
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), rcloneProbeTimeout)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, program, "about", target)
 	out, err := cmd.CombinedOutput()
@@ -417,20 +521,30 @@ func quoteRemote(s string) string {
 }
 
 func firstRcloneLine(stderr string) string {
+	var fallback string
 	for _, line := range strings.Split(stderr, "\n") {
 		line = strings.TrimSpace(line)
 		if line == "" {
 			continue
 		}
 		lower := strings.ToLower(line)
-		if strings.HasPrefix(lower, "rclone:") || strings.Contains(lower, "fatal") || strings.Contains(lower, "error") || strings.Contains(lower, "failed") || strings.Contains(lower, "critical") {
+		if strings.Contains(lower, " notice:") || strings.Contains(lower, " info:") {
+			continue
+		}
+		if strings.Contains(lower, "fatal") || strings.Contains(lower, "error") || strings.Contains(lower, "failed") || strings.Contains(lower, "critical") {
 			if len(line) > 240 {
 				return line[:240]
 			}
 			return line
 		}
+		if fallback == "" && strings.HasPrefix(lower, "rclone:") {
+			fallback = line
+		}
 	}
-	return ""
+	if len(fallback) > 240 {
+		return fallback[:240]
+	}
+	return fallback
 }
 
 // FindTool resolves a helper binary: LOCAL_BACKUP_<TOOL>, .tools/<tool>, then PATH.

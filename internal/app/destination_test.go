@@ -141,6 +141,54 @@ func TestRemoveAndDisableDestination(t *testing.T) {
 	}
 }
 
+func TestAddDestinationRejectsMissingGdriveHost(t *testing.T) {
+	fakeRclone(t, "", false)
+	application := openTest(t)
+	dir := filepath.Join(application.Home, "site")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "note.txt"), []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := application.Register(dir, "Notes", "notes", true); err != nil {
+		t.Fatal(err)
+	}
+	_, err := application.AddDestination("notes", model.Destination{
+		Kind: "gdrive", Path: "local-backup/notes", Enabled: true,
+	}, "", "")
+	if err == nil {
+		t.Fatal("expected missing host")
+	}
+	if !strings.Contains(err.Error(), "Google Drive remote is required") {
+		t.Fatal(err)
+	}
+}
+
+func TestAddDestinationDefaultsSoleGdriveRemote(t *testing.T) {
+	fakeRclone(t, "gdrive", true)
+	application := openTest(t)
+	dir := filepath.Join(application.Home, "site")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "note.txt"), []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := application.Register(dir, "Notes", "notes", true); err != nil {
+		t.Fatal(err)
+	}
+	dest, err := application.AddDestination("notes", model.Destination{
+		Kind: "gdrive", Path: "local-backup/notes", Enabled: true,
+	}, "", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if dest.Host != "gdrive" {
+		t.Fatalf("host %#v", dest.Host)
+	}
+}
+
 func TestAddDestinationRejectsMissingRcloneRemote(t *testing.T) {
 	fakeRclone(t, "other", false)
 	application := openTest(t)

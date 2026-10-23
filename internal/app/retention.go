@@ -1,6 +1,7 @@
 package app
 
 import (
+	"encoding/json"
 	"os"
 	"strconv"
 	"strings"
@@ -233,15 +234,54 @@ func missingRepo(err error) bool {
 
 func warnText(err error) string {
 	if fe, ok := err.(*fail.Error); ok {
-		if fe.Hint != "" {
-			return fe.Message + " " + fe.Hint
+		text := fe.Message
+		if archive.IsRepoLocked(fe) {
+			// Lock conflicts already carry a clear hint; skip the long restic dump.
+			if fe.Hint != "" {
+				return text + " " + fe.Hint
+			}
+			return text
 		}
-		return fe.Message
+		if detail := resticDetail(fe.Stderr); detail != "" {
+			text += " " + detail
+		}
+		if fe.Hint != "" {
+			text += " " + fe.Hint
+		}
+		return text
 	}
 	if err == nil {
 		return ""
 	}
 	return err.Error()
+}
+
+// resticDetail pulls a short human line from restic JSON or plain stderr.
+func resticDetail(stderr string) string {
+	stderr = strings.TrimSpace(stderr)
+	if stderr == "" {
+		return ""
+	}
+	for _, line := range strings.Split(stderr, "\n") {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, "{") && strings.Contains(line, "\"message\"") {
+			var msg struct {
+				Message string `json:"message"`
+			}
+			if json.Unmarshal([]byte(line), &msg) == nil && msg.Message != "" {
+				line = msg.Message
+			}
+		}
+		if line == "" {
+			continue
+		}
+		line = strings.ReplaceAll(line, "\n", " ")
+		if len(line) > 240 {
+			return line[:240]
+		}
+		return line
+	}
+	return ""
 }
 
 func enabledTargets(site model.Site) []repoTarget {
@@ -289,11 +329,7 @@ func destGlobalOpts(dest model.Destination) []string {
 	if err != nil {
 		return nil
 	}
-	rclone, err := kind.RcloneProgram()
-	if err != nil || rclone == "" {
-		return nil
-	}
-	return []string{"-o", "rclone.program=" + rclone}
+	return kind.RcloneGlobalOpts()
 }
 
 func destLabel(dest model.Destination) string {

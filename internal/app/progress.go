@@ -99,7 +99,7 @@ func (a *App) settleRun(run store.Run) (store.Run, error) {
 		Code:    "interrupted",
 		Message: "The backup stopped before it finished.",
 		Step:    "backup",
-		Hint:    "The live site was not modified. Start the backup again.",
+		Hint:    "The live site was not modified. This usually means the backup process exited early (for example the UI server was restarted while a backup ran inside it). Start the backup again.",
 		RunID:   run.RunID,
 	}
 	if err := a.DB.FinishRun(run.SiteID, run.RunID, run.StartedAt, nil, fe); err != nil {
@@ -113,12 +113,39 @@ func (a *App) settleRun(run store.Run) (store.Run, error) {
 func (w *progressWriter) set(p model.Progress, force bool) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
+	p = normalizeProgress(p)
 	w.cur = p
 	if !force && time.Since(w.last) < 200*time.Millisecond {
 		return
 	}
 	w.last = time.Now()
 	_ = w.app.writeProgress(w.siteID, w.runID, p)
+}
+
+// normalizeProgress fills Percent from file or byte counters when restic has not
+// supplied one yet, so the UI can show a percentage for every measurable phase.
+func normalizeProgress(p model.Progress) model.Progress {
+	switch {
+	case p.PercentKnown:
+		// keep restic/rsync value
+	case p.FilesTotal > 0:
+		p.PercentKnown = true
+		p.Percent = float64(p.FilesDone) * 100 / float64(p.FilesTotal)
+	case p.BytesTotal > 0 && p.BytesWritten > 0:
+		if ratio, ok := savePercent(p.BytesWritten, p.BytesTotal); ok {
+			p.PercentKnown = true
+			p.Percent = ratio
+		}
+	}
+	if p.PercentKnown {
+		if p.Percent < 0 {
+			p.Percent = 0
+		}
+		if p.Percent > 100 {
+			p.Percent = 100
+		}
+	}
+	return p
 }
 
 func (w *progressWriter) clear() {
@@ -134,6 +161,30 @@ func (w *progressWriter) release() {
 		w.lock = nil
 	}
 	w.clear()
+}
+
+func (w *progressWriter) onCopy(phase string, bytesHint int64) func(archive.Status) {
+	return func(st archive.Status) {
+		p := model.Progress{Phase: phase, BytesTotal: bytesHint}
+		if st.File != "" {
+			p.File = st.File
+		}
+		if st.WrittenBytes > 0 {
+			p.BytesWritten = st.WrittenBytes
+		}
+		if st.HasPercent {
+			p.PercentKnown = true
+			pct := st.Percent * 100
+			if pct < 0 {
+				pct = 0
+			}
+			if pct > 100 {
+				pct = 100
+			}
+			p.Percent = pct
+		}
+		w.set(p, false)
+	}
 }
 
 func (w *progressWriter) onArchive(payload string) func(archive.Status) {
@@ -168,12 +219,20 @@ func (w *progressWriter) onArchive(payload string) func(archive.Status) {
 				if ratio, ok := savePercent(p.BytesWritten, p.BytesTotal); ok {
 					p.PercentKnown = true
 					p.Percent = ratio
+				} else if p.BytesTotal > 0 {
+					// Keep a high water mark so the bar does not go indeterminate mid-save.
+					p.PercentKnown = true
+					p.Percent = 99
 				} else {
 					p.PercentKnown = false
 				}
 			}
 		} else if saving && st.File == "" {
 			p.Phase = "Saving the archive"
+			if ratio, ok := savePercent(p.BytesWritten, p.BytesTotal); ok {
+				p.PercentKnown = true
+				p.Percent = ratio
+			}
 		}
 		if st.HasFiles {
 			p.FilesDone = st.FilesDone

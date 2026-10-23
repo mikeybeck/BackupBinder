@@ -444,6 +444,12 @@ func (a *App) RunScheduled(now time.Time) (Scheduled, error) {
 	return result, nil
 }
 
+// HasSuccessfulBackup reports whether test_restore can run without a new backup.
+func (a *App) HasSuccessfulBackup(siteID string) bool {
+	_, err := a.successRun(siteID, "")
+	return err == nil
+}
+
 func (a *App) successRun(siteID, runID string) (store.Run, error) {
 	if runID == "" {
 		runs, err := a.DB.ListRuns(siteID)
