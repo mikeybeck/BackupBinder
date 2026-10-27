@@ -36,7 +36,9 @@
 
   tabs.forEach((tab) => {
     tab.addEventListener("click", () => {
-      const id = (tab.getAttribute("href") || "").slice(1);
+      const href = tab.getAttribute("href") || "";
+      if (!href.startsWith("#")) return;
+      const id = href.slice(1);
       if (id) setCurrent(id);
     });
   });

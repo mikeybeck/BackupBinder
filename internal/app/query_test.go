@@ -7,8 +7,9 @@ import (
 	"testing"
 	"time"
 
-	"local-backup/internal/fail"
-	"local-backup/internal/model"
+	"backupbinder/internal/archive"
+	"backupbinder/internal/fail"
+	"backupbinder/internal/model"
 )
 
 func TestExplainReportsRunState(t *testing.T) {
@@ -124,7 +125,7 @@ func TestRunScheduledSkipsDisabledAndNotDue(t *testing.T) {
 	if _, err := application.Register(other, "Other", "other", true); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := application.SetSchedule("other", "15 3 * * *", true); err != nil {
+	if _, err := application.SetSchedule("other", "15 3 * * *", boolPtr(true)); err != nil {
 		t.Fatal(err)
 	}
 	when := time.Date(2026, 9, 25, 4, 0, 0, 0, time.UTC)
@@ -141,6 +142,16 @@ func TestRunScheduledSkipsDisabledAndNotDue(t *testing.T) {
 	}
 	if reasons["notes"] != "disabled" || reasons["other"] != "not_due" {
 		t.Fatalf("%#v", reasons)
+	}
+	kept, err := application.SetSchedule("other", "0 4 * * *", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if kept.Cron != "0 4 * * *" || !kept.Enabled {
+		t.Fatalf("%#v", kept)
+	}
+	if _, err := application.SetSchedule("other", "", nil); err == nil {
+		t.Fatal("empty schedule change was accepted")
 	}
 	listed, err := application.ListBackups("notes")
 	if err != nil || len(listed.Backups) != 0 {
@@ -173,6 +184,48 @@ func manifestWithFiles(runID string, files []model.FileRecord, dbBytes int64, wo
 			Database: &model.DBCapture{Bytes: dbBytes},
 		},
 		Snapshot: model.Snapshot{RunID: runID, ResticSnapshotID: "snap-" + runID},
+	}
+}
+
+func TestSnapshotTreeMatchesTheInventory(t *testing.T) {
+	manifest := model.Manifest{Captured: model.Captured{Files: model.FileCapture{Inventory: []model.FileRecord{
+		{Path: "note.txt", Bytes: 4},
+	}}}}
+	good := []archive.Node{
+		{StructType: "node", Type: "dir", Path: "/files"},
+		{StructType: "node", Type: "file", Path: "/files/note.txt", Size: 4},
+		{StructType: "node", Type: "file", Path: "/manifest.json", Size: 2},
+	}
+	if err := snapshotTree(good, manifest); err != nil {
+		t.Fatal(err)
+	}
+	missing := []archive.Node{good[0], good[2]}
+	if err := snapshotTree(missing, manifest); err == nil || !strings.Contains(err.Error(), "missing") {
+		t.Fatal(err)
+	}
+	extra := append(append([]archive.Node{}, good...), archive.Node{Type: "file", Path: "/files/extra.txt", Size: 1})
+	if err := snapshotTree(extra, manifest); err == nil || !strings.Contains(err.Error(), "unexpected file") {
+		t.Fatal(err)
+	}
+	wrongSize := append([]archive.Node{}, good...)
+	wrongSize[1].Size = 9
+	if err := snapshotTree(wrongSize, manifest); err == nil || !strings.Contains(err.Error(), "size") {
+		t.Fatal(err)
+	}
+	withDB := manifest
+	withDB.Captured.Database = &model.DBCapture{Bytes: 3}
+	if err := snapshotTree(good, withDB); err == nil {
+		t.Fatal("database dump was not required")
+	}
+	withDump := append(append([]archive.Node{}, good...),
+		archive.Node{Type: "dir", Path: "/database"},
+		archive.Node{Type: "file", Path: "/database/database.sql", Size: 3},
+	)
+	if err := snapshotTree(withDump, withDB); err != nil {
+		t.Fatal(err)
+	}
+	if err := snapshotTree(withDump, manifest); err == nil {
+		t.Fatal("unexpected database dump was accepted")
 	}
 }
 

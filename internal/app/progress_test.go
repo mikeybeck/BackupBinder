@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
-	"local-backup/internal/archive"
-	"local-backup/internal/model"
+	"backupbinder/internal/archive"
+	"backupbinder/internal/model"
 )
 
 func TestArchiveFileStripsPayload(t *testing.T) {

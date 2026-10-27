@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"local-backup/internal/fail"
+	"backupbinder/internal/fail"
 )
 
 func TestSpeedLimitsReachRestic(t *testing.T) {
@@ -53,13 +53,13 @@ func TestSpeedLimitsReachRestic(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	var sawLimit bool
+	var sawCommand bool
 	for _, step := range manifest.Restore.Steps {
-		if strings.Contains(step, "--limit-upload 64") && strings.Contains(step, "--limit-download 32") {
-			sawLimit = true
+		if strings.Contains(step, "restore_backup --id limited --root ") && strings.Contains(step, "Omit --scratch") {
+			sawCommand = true
 		}
 	}
-	if !sawLimit {
+	if !sawCommand {
 		t.Fatal(manifest.Restore.Steps)
 	}
 	if _, err := application.Verify("limited", manifest.Snapshot.RunID); err != nil {

@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>Handbook — BackupBinder</title>
+  <meta name="description" content="How BackupBinder backs up a site on this machine: install, the first backup, restore, schedules, destinations, and agents."/>
+  <link rel="preconnect" href="https://fonts.googleapis.com"/>
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+  <link href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;650;700;800&family=Source+Sans+3:ital,wght@0,400;0,600;0,700;1,400&display=swap" rel="stylesheet"/>
+  <link rel="stylesheet" href="../styles.css"/>
+</head>
+<body>
+  <a class="skip" href="#main">Skip to content</a>
+
+  <div class="cabinet">
+    <header class="drawer-chrome">
+      <div class="handle" aria-hidden="true"></div>
+      <nav class="hanging-tabs" aria-label="Primary">
+        <a class="tab tab--brand" href="../index.html">BackupBinder</a>
+        <a class="tab" href="index.html" aria-current="page">Docs</a>
+      </nav>
+    </header>
+
+    <main id="main">
+      <section class="folder folder--doc" aria-labelledby="doc-title">
+        <div class="folder__spine" aria-hidden="true"></div>
+        <div class="folder__tab-label" aria-hidden="true">Handbook</div>
+        <div class="folder__face">
+          <h1 id="doc-title">How a backup works here.</h1>
+          <p class="lede">BackupBinder keeps a restic archive of a site on this machine. Restic is the program that stores the archive. Each successful run is a snapshot, and file data that has not changed is stored once.</p>
+          <div class="doc-prose">
+            <p>A site is a directory of files. When an addon matches that directory, the backup can also include a database dump. WordPress is the addon that ships with the program. A directory that matches nothing is files only.</p>
+            <p>With no destination turned on, the backup stays on this computer. That backup is complete. A destination is an extra copy of the finished archive.</p>
+            <p>The program you build is named <code>backupbinder</code>.</p>
+          </div>
+          <ol class="chapters">
+            <li>
+              <a href="install.html">Install</a>
+              <p>Build the program, put restic where it can be found, and open the browser on this machine.</p>
+            </li>
+            <li>
+              <a href="first-backup.html">First backup</a>
+              <p>Point it at a folder or a server, answer one step at a time, and see what the run stores.</p>
+            </li>
+            <li>
+              <a href="restore.html">Restore</a>
+              <p>Extract a snapshot into an empty folder and leave the live site alone.</p>
+            </li>
+            <li>
+              <a href="schedules.html">Schedules</a>
+              <p>Call the program from cron, choose how many snapshots to keep, and cap the speed.</p>
+            </li>
+            <li>
+              <a href="destinations.html">Destinations</a>
+              <p>Copy a finished archive to SFTP, a disk, S3, B2, or Google Drive.</p>
+            </li>
+            <li>
+              <a href="agents.html">Agents</a>
+              <p>Use the same commands from a script or over MCP, after naming the exact site.</p>
+            </li>
+          </ol>
+          <nav class="doc-pager" aria-label="Adjacent pages">
+            <a class="next" href="install.html"><span>Next</span> Install</a>
+          </nav>
+        </div>
+      </section>
+    </main>
+
+    <footer class="drawer-foot">
+      <p><strong>BackupBinder</strong> · Site backups on this machine</p>
+      <p class="muted">Open source. No cloud account required for a complete local backup.</p>
+    </footer>
+  </div>
+</body>
+</html>

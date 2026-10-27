@@ -1,6 +1,6 @@
 # BackupBinder
 
-BackupBinder keeps a restic archive of a site on this machine. A site has sources, a snapshot, destinations, and a restore procedure. Site types are addons. WordPress ships as `internal/addon/wordpress.json`. The product is the backup contract, not a WordPress host. The current binary is still named `local-backup`.
+BackupBinder keeps a restic archive of a site on this machine. A site has sources, a snapshot, destinations, and a restore procedure. Site types are addons. WordPress ships as `internal/addon/wordpress.json`. The product is the backup contract, not a WordPress host.
 
 Marketing site (static): open [`site/index.html`](site/index.html), or https://backupbinder.pages.dev. Deploy notes in [`site/README.md`](site/README.md).
 
@@ -11,38 +11,38 @@ Database passwords are never stored in the site contract or registry. When an ad
 From this directory:
 
 ```sh
-go build -o bin/local-backup ./cmd/local-backup
+go build -o bin/backupbinder ./cmd/backupbinder
 ```
 
-Data goes in `var/` (gitignored), or pass `--home` / `LOCAL_BACKUP_HOME`. Restic is `.tools/restic` when that file exists, otherwise `restic` on `PATH` or `LOCAL_BACKUP_RESTIC`. Rclone (for Google Drive) is `.tools/rclone`, `PATH`, or `LOCAL_BACKUP_RCLONE`.
+Data goes in `var/` (gitignored), or pass `--home` / `BACKUPBINDER_HOME`. Restic is `.tools/restic` when that file exists, otherwise `restic` on `PATH` or `BACKUPBINDER_RESTIC`. Rclone (for Google Drive) is `.tools/rclone`, `PATH`, or `BACKUPBINDER_RCLONE`.
 
 ```sh
-./bin/local-backup agent
-./bin/local-backup setup --path fixtures/wordpress-site
-./bin/local-backup setup --host files.example --user backup --remote-path /var/www/site --name Example
-./bin/local-backup discover_site --path fixtures/wordpress-site
-./bin/local-backup register_site --path fixtures/wordpress-site --name "Fixture WordPress" --id fixture-wordpress
-./bin/local-backup list_sites
-./bin/local-backup inspect_site --id fixture-wordpress
-./bin/local-backup set_schedule --id fixture-wordpress --cron "15 3 * * *" --enabled
-./bin/local-backup set_location --id fixture-wordpress --root fixtures/wordpress-site --kind sftp --host files.example --user backup --remote-path /var/www/site
-./bin/local-backup set_limits --id fixture-wordpress --root fixtures/wordpress-site --limit-upload 1024 --limit-download 1024
-./bin/local-backup set_retention --id fixture-wordpress --root fixtures/wordpress-site --keep-daily 14 --keep-weekly 8
-./bin/local-backup apply_retention --id fixture-wordpress --root fixtures/wordpress-site
-./bin/local-backup add_destination --id fixture-wordpress --kind sftp --host files.example --user backup --path /repos/site
-./bin/local-backup add_destination --id fixture-wordpress --root fixtures/wordpress-site --kind gdrive --host gdrive --path local-backup/fixture-wordpress
-./bin/local-backup set_destination --id fixture-wordpress --root fixtures/wordpress-site --destination gdrive-1 --enabled
-./bin/local-backup remove_destination --id fixture-wordpress --root fixtures/wordpress-site --destination gdrive-1
-./bin/local-backup identify --query "Fixture WordPress"
-./bin/local-backup create_backup --id fixture-wordpress --root fixtures/wordpress-site
-./bin/local-backup verify_backup --id fixture-wordpress
-./bin/local-backup list_backups --id fixture-wordpress
-./bin/local-backup compare_backups --id fixture-wordpress --left RUN --right RUN
-./bin/local-backup explain_failure --id fixture-wordpress
-./bin/local-backup test_restore --id fixture-wordpress
-./bin/local-backup restore_backup --id fixture-wordpress --scratch /tmp/empty-scratch
-./bin/local-backup serve --host 127.0.0.1 --port 47831
-./bin/local-backup mcp
+./bin/backupbinder agent
+./bin/backupbinder setup --path fixtures/wordpress-site
+./bin/backupbinder setup --host files.example --user backup --remote-path /var/www/site --name Example
+./bin/backupbinder discover_site --path fixtures/wordpress-site
+./bin/backupbinder register_site --path fixtures/wordpress-site --name "Fixture WordPress" --id fixture-wordpress
+./bin/backupbinder list_sites
+./bin/backupbinder inspect_site --id fixture-wordpress
+./bin/backupbinder set_schedule --id fixture-wordpress --cron "15 3 * * *" --enabled
+./bin/backupbinder set_location --id fixture-wordpress --root fixtures/wordpress-site --kind sftp --host files.example --user backup --remote-path /var/www/site
+./bin/backupbinder set_limits --id fixture-wordpress --root fixtures/wordpress-site --limit-upload 1024 --limit-download 1024
+./bin/backupbinder set_retention --id fixture-wordpress --root fixtures/wordpress-site --keep-daily 14 --keep-weekly 8
+./bin/backupbinder apply_retention --id fixture-wordpress --root fixtures/wordpress-site
+./bin/backupbinder add_destination --id fixture-wordpress --kind sftp --host files.example --user backup --path /repos/site
+./bin/backupbinder add_destination --id fixture-wordpress --root fixtures/wordpress-site --kind gdrive --host gdrive --path backupbinder/fixture-wordpress
+./bin/backupbinder set_destination --id fixture-wordpress --root fixtures/wordpress-site --destination gdrive-1 --enabled
+./bin/backupbinder remove_destination --id fixture-wordpress --root fixtures/wordpress-site --destination gdrive-1
+./bin/backupbinder identify --query "Fixture WordPress"
+./bin/backupbinder create_backup --id fixture-wordpress --root fixtures/wordpress-site
+./bin/backupbinder verify_backup --id fixture-wordpress
+./bin/backupbinder list_backups --id fixture-wordpress
+./bin/backupbinder compare_backups --id fixture-wordpress --left RUN --right RUN
+./bin/backupbinder explain_failure --id fixture-wordpress
+./bin/backupbinder test_restore --id fixture-wordpress
+./bin/backupbinder restore_backup --id fixture-wordpress --scratch /tmp/empty-scratch
+./bin/backupbinder serve --host 127.0.0.1 --port 47831
+./bin/backupbinder mcp
 ```
 
 Every command prints JSON. Failures look like `{"ok": false, "error": {"code": "...", "message": "..."}}`.
@@ -64,8 +64,8 @@ The browser and the agent write `var/sites/<id>.json`. Edit that file to change 
 ```json
 {
   "mcpServers": {
-    "local-backup": {
-      "command": "/path/to/local-backup",
+    "backupbinder": {
+      "command": "/path/to/backupbinder",
       "args": ["--home", "/path/to/var", "mcp"]
     }
   }
@@ -95,7 +95,7 @@ Destination kinds work the same way under `destinations/`: each JSON file names 
 A schedule is five cron fields stored on the site. It does not run by itself. Point system cron at the binary:
 
 ```sh
-* * * * * /path/to/local-backup --home /path/to/var run_scheduled
+* * * * * /path/to/backupbinder --home /path/to/var run_scheduled
 ```
 
 `run_scheduled` calls the same `create_backup` path. Nothing in that path asks an agent what to do.
@@ -120,4 +120,4 @@ Each successful run is a restic snapshot. Unchanged file data is stored once. A 
 
 ## License
 
-Local backup is free software under the [GNU General Public License v3.0 or later](LICENSE).
+BackupBinder is free software under the [GNU General Public License v3.0 or later](LICENSE).

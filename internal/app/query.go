@@ -9,11 +9,12 @@ import (
 	"strings"
 	"time"
 
-	"local-backup/internal/discover"
-	"local-backup/internal/fail"
-	"local-backup/internal/model"
-	"local-backup/internal/schedule"
-	"local-backup/internal/store"
+	"backupbinder/internal/archive"
+	"backupbinder/internal/discover"
+	"backupbinder/internal/fail"
+	"backupbinder/internal/model"
+	"backupbinder/internal/schedule"
+	"backupbinder/internal/store"
 )
 
 // Inspect is a read of the contract plus what the directory looks like now.
@@ -22,6 +23,7 @@ type Inspect struct {
 	Site               model.Site        `json:"site"`
 	Detected           model.Versions    `json:"detected"`
 	LastRun            *RunSummary       `json:"last_run"`
+	Restore            *RestoreStatus    `json:"restore,omitempty"`
 	RestoreConfidence  string            `json:"restore_confidence"`
 	Tools              map[string]string `json:"tools"`
 	ScheduleInvocation string            `json:"schedule_invocation"`
@@ -83,8 +85,13 @@ func (a *App) Inspect(siteID string) (Inspect, error) {
 	if summary != nil && summary.OK && summary.RestoreConfidence != "" {
 		confidence = summary.RestoreConfidence
 	}
+	var restore *RestoreStatus
+	if status, ok := a.ReadRestoreStatus(site.ID); ok {
+		status.PID = 0
+		restore = &status
+	}
 	return Inspect{
-		OK: true, Site: site, Detected: detected, LastRun: summary,
+		OK: true, Site: site, Detected: detected, LastRun: summary, Restore: restore,
 		RestoreConfidence: confidence, Tools: a.tools(),
 		ScheduleInvocation: a.scheduleLine(),
 	}, nil
@@ -117,14 +124,20 @@ func (a *App) tools() map[string]string {
 	return map[string]string{
 		"restic":    a.Restic.Binary,
 		"ssh":       look("ssh"),
+		"rsync":     look("rsync"),
+		"rclone":    look("rclone"),
 		"mysqldump": look("mysqldump"),
 		"wp":        look("wp"),
 		"php":       discover.FindPHP(),
 	}
 }
 
+func (a *App) ScheduleLine() string {
+	return a.scheduleLine()
+}
+
 func (a *App) scheduleLine() string {
-	bin := "local-backup"
+	bin := "backupbinder"
 	if exe, err := os.Executable(); err == nil && exe != "" {
 		bin = exe
 	}
@@ -213,30 +226,124 @@ func (a *App) Verify(siteID, runID string) (VerifyResult, error) {
 	if err := restic.Check(repo, password); err != nil {
 		return VerifyResult{}, err
 	}
-	paths, err := restic.List(repo, password, run.Manifest.Snapshot.ResticSnapshotID)
+	nodes, err := restic.List(repo, password, run.Manifest.Snapshot.ResticSnapshotID)
 	if err != nil {
 		return VerifyResult{}, err
 	}
-	if !hasPrefix(paths, "/files") {
-		return VerifyResult{}, fail.New("verify_failed", "The snapshot does not contain files/.")
+	if err := snapshotTree(nodes, *run.Manifest); err != nil {
+		return VerifyResult{}, err
 	}
-	if run.Manifest.Captured.Database != nil && !hasPrefix(paths, "/database/database.sql") {
-		return VerifyResult{}, fail.New("verify_failed", "The snapshot does not contain the database dump.")
+	if _, err := os.Stat(a.manifestPath(site.ID, run.RunID)); err != nil {
+		return VerifyResult{}, fail.New("verify_failed", "The manifest file for this run is missing.")
 	}
-	_, err = os.Stat(a.manifestPath(site.ID, run.RunID))
 	return VerifyResult{
 		OK: true, RunID: run.RunID, SnapshotID: run.Manifest.Snapshot.ResticSnapshotID,
-		Readable: true, ResticCheck: "passed", ManifestPresent: err == nil,
+		Readable: true, ResticCheck: "passed", ManifestPresent: true,
 	}, nil
 }
 
-func hasPrefix(paths []string, prefix string) bool {
-	for _, path := range paths {
-		if path == prefix || len(path) > len(prefix) && path[:len(prefix)+1] == prefix+"/" {
-			return true
+// snapshotTree checks the snapshot listing against the manifest inventory.
+// The archive must contain those files, the staged manifest, and nothing else.
+func snapshotTree(nodes []archive.Node, manifest model.Manifest) error {
+	files := map[string]int64{}
+	dirs := map[string]struct{}{}
+	for _, node := range nodes {
+		if node.Path == "" {
+			return fail.New("verify_failed", "The snapshot listing is incomplete.")
+		}
+		switch node.Type {
+		case "file":
+			files[node.Path] = node.Size
+		case "dir":
+			dirs[node.Path] = struct{}{}
+		default:
+			return fail.New("verify_failed", "The snapshot contains an unexpected entry: "+node.Path+".")
 		}
 	}
-	return false
+	expectedFiles := map[string]int64{"/manifest.json": -1}
+	expectedDirs := map[string]struct{}{"/files": {}}
+	for _, item := range manifest.Captured.Files.Inventory {
+		path, err := snapshotFilePath(item.Path)
+		if err != nil {
+			return err
+		}
+		expectedFiles[path] = item.Bytes
+		addParents(expectedDirs, path)
+	}
+	if manifest.Captured.Database != nil {
+		expectedFiles["/database/database.sql"] = manifest.Captured.Database.Bytes
+		expectedDirs["/database"] = struct{}{}
+	}
+	var missing, extra, sized []string
+	for path, size := range expectedFiles {
+		got, ok := files[path]
+		if !ok {
+			missing = append(missing, path)
+			continue
+		}
+		if size >= 0 && got != size {
+			sized = append(sized, path)
+		}
+	}
+	for path := range files {
+		if _, ok := expectedFiles[path]; !ok {
+			extra = append(extra, path)
+		}
+	}
+	var missingDirs, extraDirs []string
+	for path := range expectedDirs {
+		if _, ok := dirs[path]; !ok {
+			missingDirs = append(missingDirs, path)
+		}
+	}
+	for path := range dirs {
+		if _, ok := expectedDirs[path]; !ok {
+			extraDirs = append(extraDirs, path)
+		}
+	}
+	slices.Sort(missing)
+	slices.Sort(extra)
+	slices.Sort(sized)
+	slices.Sort(missingDirs)
+	slices.Sort(extraDirs)
+	switch {
+	case len(missing) > 0:
+		return fail.New("verify_failed", "The snapshot is missing "+displayPath(missing[0])+".")
+	case len(sized) > 0:
+		return fail.New("verify_failed", "The snapshot size of "+displayPath(sized[0])+" does not match the manifest.")
+	case len(extra) > 0:
+		return fail.New("verify_failed", "The snapshot contains an unexpected file: "+extra[0]+".")
+	case len(missingDirs) > 0:
+		return fail.New("verify_failed", "The snapshot is missing "+displayPath(missingDirs[0])+".")
+	case len(extraDirs) > 0:
+		return fail.New("verify_failed", "The snapshot contains an unexpected directory: "+extraDirs[0]+".")
+	}
+	return nil
+}
+
+func snapshotFilePath(rel string) (string, error) {
+	for _, part := range strings.Split(rel, "/") {
+		if part == "" || part == "." || part == ".." {
+			return "", fail.New("verify_failed", "The manifest inventory has an unsafe path.")
+		}
+	}
+	return "/files/" + rel, nil
+}
+
+func addParents(dirs map[string]struct{}, filePath string) {
+	dir := filePath
+	for {
+		i := strings.LastIndex(dir, "/")
+		if i <= 0 {
+			break
+		}
+		dir = dir[:i]
+		dirs[dir] = struct{}{}
+	}
+}
+
+func displayPath(path string) string {
+	return strings.TrimPrefix(path, "/")
 }
 
 type CompareResult struct {
@@ -368,23 +475,39 @@ func (a *App) Explain(siteID, runID string) (ExplainResult, error) {
 	return ExplainResult{OK: true, SiteID: siteID, RunID: run.RunID, Failure: run.Failure}, nil
 }
 
-func (a *App) SetSchedule(siteID, cron string, enabled bool) (model.Schedule, error) {
+func (a *App) SetSchedule(siteID, cron string, enabled *bool) (model.Schedule, error) {
 	site, err := a.DB.GetSite(siteID)
 	if err != nil {
 		return model.Schedule{}, err
 	}
-	if enabled || cron != "" {
-		if err := schedule.Check(cron); err != nil {
+	cron = strings.TrimSpace(cron)
+	if enabled == nil && cron == "" {
+		return model.Schedule{}, fail.New("bad_command", "Pass --cron or --enabled. Omit a flag to leave that saved value unchanged.")
+	}
+	nextCron := site.Schedule.Cron
+	if cron != "" {
+		nextCron = cron
+	}
+	nextEnabled := site.Schedule.Enabled
+	if enabled != nil {
+		nextEnabled = *enabled
+	}
+	if nextEnabled || nextCron != "" {
+		if err := schedule.Check(nextCron); err != nil {
 			return model.Schedule{}, err
 		}
 	}
-	if err := a.DB.SaveSchedule(site.ID, cron, enabled, site.Schedule.LastSlot); err != nil {
+	if err := a.DB.SaveSchedule(site.ID, nextCron, nextEnabled, site.Schedule.LastSlot); err != nil {
 		return model.Schedule{}, err
 	}
 	if err := a.saveSiteFile(site.ID); err != nil {
 		return model.Schedule{}, err
 	}
-	return model.Schedule{Cron: cron, Enabled: enabled, LastSlot: site.Schedule.LastSlot}, nil
+	return model.Schedule{Cron: nextCron, Enabled: nextEnabled, LastSlot: site.Schedule.LastSlot}, nil
+}
+
+func boolPtr(v bool) *bool {
+	return &v
 }
 
 type Scheduled struct {

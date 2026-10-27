@@ -11,13 +11,13 @@ import (
 	"strings"
 	"time"
 
-	"local-backup/internal/archive"
-	"local-backup/internal/capture"
-	"local-backup/internal/destination"
-	"local-backup/internal/discover"
-	"local-backup/internal/fail"
-	"local-backup/internal/model"
-	"local-backup/internal/store"
+	"backupbinder/internal/archive"
+	"backupbinder/internal/capture"
+	"backupbinder/internal/destination"
+	"backupbinder/internal/discover"
+	"backupbinder/internal/fail"
+	"backupbinder/internal/model"
+	"backupbinder/internal/store"
 )
 
 var (
@@ -63,6 +63,10 @@ func (a *App) Register(path, name, id string, idExplicit bool) (discover.Result,
 
 // CreateBackup is the only backup path. Schedules and the UI call it directly.
 func (a *App) CreateBackup(siteID string) (model.Manifest, error) {
+	preset := os.Getenv("BACKUPBINDER_RUN_ID")
+	if preset != "" {
+		_ = os.Unsetenv("BACKUPBINDER_RUN_ID")
+	}
 	site, err := a.DB.GetSite(siteID)
 	if err != nil {
 		return model.Manifest{}, err
@@ -71,21 +75,40 @@ func (a *App) CreateBackup(siteID string) (model.Manifest, error) {
 		return model.Manifest{}, fail.New("missing_path", "The site root is missing: "+site.Root)
 	}
 	if err := a.checkEnabledDestinations(site); err != nil {
+		if preset != "" {
+			started := time.Now().UTC().Format(time.RFC3339)
+			if existing, getErr := a.DB.GetRun(site.ID, preset); getErr == nil && existing.StartedAt != "" {
+				started = existing.StartedAt
+			}
+			return model.Manifest{}, a.failRun(siteID, preset, started, err, nil)
+		}
 		return model.Manifest{}, err
 	}
-	runID, err := a.newRunID(site.ID)
-	if err != nil {
+	if err := a.refuseBusy(site.ID, preset); err != nil {
 		return model.Manifest{}, err
 	}
+	runID := preset
 	started := time.Now().UTC().Format(time.RFC3339)
+	if runID == "" {
+		runID, err = a.newRunID(site.ID)
+		if err != nil {
+			return model.Manifest{}, err
+		}
+		if err := a.DB.BeginRun(site.ID, runID, started); err != nil {
+			return model.Manifest{}, err
+		}
+	} else if _, err := a.DB.GetRun(site.ID, runID); err != nil {
+		if err := a.DB.BeginRun(site.ID, runID, started); err != nil {
+			return model.Manifest{}, err
+		}
+	} else if existing, err := a.DB.GetRun(site.ID, runID); err == nil && existing.StartedAt != "" {
+		started = existing.StartedAt
+	}
 	note, err := a.progress(site.ID, runID)
 	if err != nil {
 		return model.Manifest{}, err
 	}
 	defer note.release()
-	if err := a.DB.BeginRun(site.ID, runID, started); err != nil {
-		return model.Manifest{}, err
-	}
 	note.set(model.Progress{Phase: "Starting the backup"}, true)
 	if site.Location.Kind == "sftp" {
 		label := site.Location.User + "@" + site.Location.Host + ":" + site.Location.Path
@@ -103,6 +126,11 @@ func (a *App) CreateBackup(siteID string) (model.Manifest, error) {
 		}); err != nil {
 			return model.Manifest{}, a.failRun(site.ID, runID, started, err, nil)
 		}
+		updated, adoptErr := a.adoptCopiedSite(site)
+		if adoptErr != nil {
+			return model.Manifest{}, a.failRun(site.ID, runID, started, adoptErr, nil)
+		}
+		site = updated
 	}
 	excludes := fileExcludes(site)
 	note.set(model.Progress{Phase: "Estimating size"}, true)
@@ -214,42 +242,26 @@ func (a *App) buildManifest(site model.Site, runID, started string, files model.
 		Warnings:     warnings,
 		Restore: model.Restore{
 			Confidence: "never",
-			Steps:      restoreSteps(site.Root, repo, password, snapshotID, db != nil, dbName, site.Limits),
+			Steps:      restoreSteps(site.ID, site.Root, db != nil, dbName),
 		},
 	}
 }
 
-func restoreSteps(root, repo, password, snapshotID string, hasDB bool, dbName string, limits model.Limits) []string {
-	id := snapshotID
-	if id == "" {
-		id = "<snapshot id written after restic returns>"
-	}
+func restoreSteps(siteID, root string, hasDB bool, dbName string) []string {
 	if dbName == "" {
 		dbName = "(live database)"
 	}
 	steps := []string{
 		"Do not write into the live site root: " + root,
-		"export RESTIC_PASSWORD_FILE=" + password,
-		"restic" + limitFlags(limits) + " -r " + repo + " restore " + id + " --target SCRATCH",
-		"SCRATCH must be an empty directory. It must not be the live site, a parent of the live site, or the restic repository.",
+		"Call restore_backup --id " + siteID + " --root " + root + ". Omit --scratch. A new empty directory is created under the data home scratch folder.",
+		"Do not run restic restore yourself, and do not choose a target inside the live site or the repository.",
 		"The restore contains files/ from the site.",
 	}
 	if hasDB {
-		steps = append(steps, "Import SCRATCH/database/database.sql into a new empty database. Do not import into the live database "+dbName+".")
+		steps = append(steps, "Import the scratch database/database.sql into a new empty database. Do not import into the live database "+dbName+".")
 	}
-	steps = append(steps, "Point a new web root at SCRATCH/files. Leave "+root+" unchanged.")
+	steps = append(steps, "Point a new web root at the scratch files directory. Leave "+root+" unchanged.")
 	return steps
-}
-
-func limitFlags(limits model.Limits) string {
-	var flags string
-	if limits.UploadKiB > 0 {
-		flags += " --limit-upload " + strconv.Itoa(limits.UploadKiB)
-	}
-	if limits.DownloadKiB > 0 {
-		flags += " --limit-download " + strconv.Itoa(limits.DownloadKiB)
-	}
-	return flags
 }
 
 func (a *App) publish(site model.Site, repo, password, snapshotID string, bytesHint int64, note *progressWriter) ([]model.DestResult, []string) {
@@ -384,6 +396,9 @@ func (a *App) AddDestination(siteID string, dest model.Destination, accessKey, s
 		return dest, err
 	}
 	kind.ApplyDefaults(&dest)
+	if err := kind.Unexpected(dest); err != nil {
+		return dest, err
+	}
 	if err := kind.Validate(site, a.repoPath(site), dest); err != nil {
 		return dest, err
 	}
@@ -413,9 +428,43 @@ func (a *App) AddDestination(siteID string, dest model.Destination, accessKey, s
 	return dest, nil
 }
 
+// DestinationPatch updates one saved destination. Nil fields stay as stored.
+// KeysSet rewrites the credential file. Omitted keys leave that file alone.
+type DestinationPatch struct {
+	Enabled                  *bool
+	Host, User, Path         *string
+	Bucket, Prefix, Endpoint *string
+	AccessKey, SecretKey     string
+	KeysSet                  bool
+}
+
+// SetField records one connection field as explicitly set, including an empty value.
+func (p *DestinationPatch) SetField(name, value string) {
+	copied := value
+	switch name {
+	case "host":
+		p.Host = &copied
+	case "user":
+		p.User = &copied
+	case "path":
+		p.Path = &copied
+	case "bucket":
+		p.Bucket = &copied
+	case "prefix":
+		p.Prefix = &copied
+	case "endpoint":
+		p.Endpoint = &copied
+	}
+}
+
 // SetDestinationEnabled turns upload on or off for one saved destination.
 // Enabling re-checks access. The local restic repository cannot be disabled.
 func (a *App) SetDestinationEnabled(siteID, destID string, enabled bool) (model.Destination, error) {
+	return a.SetDestination(siteID, destID, DestinationPatch{Enabled: &enabled})
+}
+
+// SetDestination applies a partial update and keeps the destination id.
+func (a *App) SetDestination(siteID, destID string, patch DestinationPatch) (model.Destination, error) {
 	site, err := a.DB.GetSite(siteID)
 	if err != nil {
 		return model.Destination{}, err
@@ -427,19 +476,56 @@ func (a *App) SetDestinationEnabled(siteID, destID string, enabled bool) (model.
 	if dest.Kind == "local_restic" {
 		return model.Destination{}, fail.New("bad_destination", "The local restic repository stays enabled.")
 	}
-	if enabled {
-		kind, err := destination.ByID(dest.Kind)
-		if err != nil {
-			return model.Destination{}, err
-		}
-		if err := kind.Validate(site, a.repoPath(site), dest); err != nil {
-			return model.Destination{}, err
-		}
+	if patch.Host != nil {
+		dest.Host = *patch.Host
+	}
+	if patch.User != nil {
+		dest.User = *patch.User
+	}
+	if patch.Path != nil {
+		dest.Path = *patch.Path
+	}
+	if patch.Bucket != nil {
+		dest.Bucket = *patch.Bucket
+	}
+	if patch.Prefix != nil {
+		dest.Prefix = *patch.Prefix
+	}
+	if patch.Endpoint != nil {
+		dest.Endpoint = *patch.Endpoint
+	}
+	if patch.Enabled != nil {
+		dest.Enabled = *patch.Enabled
+	}
+	kind, err := destination.ByID(dest.Kind)
+	if err != nil {
+		return model.Destination{}, err
+	}
+	if err := kind.Unexpected(dest); err != nil {
+		return model.Destination{}, err
+	}
+	if err := kind.Validate(site, a.repoPath(site), dest); err != nil {
+		return model.Destination{}, err
+	}
+	if dest.Enabled {
 		if err := kind.CheckAccess(dest, true); err != nil {
 			return model.Destination{}, err
 		}
 	}
-	dest.Enabled = enabled
+	if patch.KeysSet {
+		body, err := kind.CredentialBody(patch.AccessKey, patch.SecretKey)
+		if err != nil {
+			return model.Destination{}, err
+		}
+		path := dest.CredentialFile
+		if path == "" {
+			path = filepath.Join(a.Home, "secrets", site.ID+"-"+dest.ID+".env")
+		}
+		if err := store.WriteSecret(path, body); err != nil {
+			return model.Destination{}, err
+		}
+		dest.CredentialFile = path
+	}
 	if err := a.DB.UpdateDestination(site.ID, dest); err != nil {
 		return model.Destination{}, err
 	}
@@ -549,6 +635,22 @@ func (a *App) repoPath(site model.Site) string {
 		}
 	}
 	return filepath.Join(a.Home, "restic", site.ID)
+}
+
+// refuseBusy stops a second backup while one run is still live.
+// preset is the run id a detached child was started with; that child may continue it.
+func (a *App) refuseBusy(siteID, preset string) error {
+	run, err := a.DB.LatestRun(siteID)
+	if err != nil || run.RunID == "" || !run.InProgress() {
+		return nil
+	}
+	if preset != "" && run.RunID == preset {
+		return nil
+	}
+	if !a.runIsLive(siteID, run.RunID) {
+		return nil
+	}
+	return fail.New("backup_busy", "A backup is already running for this site.")
 }
 
 func (a *App) newRunID(siteID string) (string, error) {

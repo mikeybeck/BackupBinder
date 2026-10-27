@@ -10,9 +10,9 @@ import (
 	"strings"
 	"time"
 
-	"local-backup/internal/addon"
-	"local-backup/internal/fail"
-	"local-backup/internal/model"
+	"backupbinder/internal/addon"
+	"backupbinder/internal/fail"
+	"backupbinder/internal/model"
 )
 
 var (
@@ -79,7 +79,7 @@ func excludeLabel(pattern string) string {
 
 // FindPHP returns a PHP binary, or empty.
 func FindPHP() string {
-	if override := os.Getenv("LOCAL_BACKUP_PHP"); override != "" {
+	if override := os.Getenv("BACKUPBINDER_PHP"); override != "" {
 		if st, err := os.Stat(override); err == nil && !st.IsDir() {
 			return override
 		}
@@ -127,6 +127,9 @@ type Result struct {
 func Site(path, name, id string) (Result, error) {
 	info, err := os.Stat(path)
 	if err != nil {
+		if os.IsNotExist(err) && looksLikeHostPath(path) {
+			return Result{}, fail.New("missing_path", path+" does not exist. A hostname is not a directory. Call setup --host "+path+" --user USER --remote-path PATH. Do not create a directory with that name.")
+		}
 		return Result{}, fail.New("missing_path", path+" does not exist.")
 	}
 	if !info.IsDir() {
@@ -238,4 +241,9 @@ func slug(name string) string {
 		s = strings.Trim(s[:48], "-")
 	}
 	return s
+}
+
+func looksLikeHostPath(value string) bool {
+	value = strings.TrimSpace(value)
+	return strings.Contains(value, ".") && !strings.ContainsAny(value, "/\\ ")
 }

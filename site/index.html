@@ -4,7 +4,7 @@
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1"/>
   <title>BackupBinder - Site backups on this machine</title>
-  <meta name="description" content="BackupBinder keeps a local archive of a site on this machine. Optional remotes. Safe restore into empty scratch. Same contract for you and your agent."/>
+  <meta name="description" content="BackupBinder keeps an archive of a site on this machine. Copy it elsewhere if you want. Restore into an empty folder. The handbook covers install, backup, restore, schedules, and agents."/>
   <link rel="preconnect" href="https://fonts.googleapis.com"/>
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
   <link href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;650;700;800&family=Source+Sans+3:ital,wght@0,400;0,600;0,700;1,400&display=swap" rel="stylesheet"/>
@@ -18,6 +18,7 @@
       <div class="handle" aria-hidden="true"></div>
       <nav class="hanging-tabs" aria-label="Primary">
         <a class="tab tab--brand" href="#top" aria-current="page">BackupBinder</a>
+        <a class="tab" href="docs/index.html">Docs</a>
         <a class="tab" href="#what">What it does</a>
         <a class="tab" href="#how">How you use it</a>
         <a class="tab" href="#trust">Trust</a>
@@ -32,10 +33,10 @@
           <p class="brand" id="hero-brand">BackupBinder</p>
           <p class="subtitle">Site backups on this machine</p>
           <h1 class="headline">Keep a site archive you can actually restore.</h1>
-          <p class="lede">Local-first backups for any directory. Optional remotes when you want them. The same contract for you and your agent, without inventing hosts, paths, or secrets.</p>
+          <p class="lede">BackupBinder keeps an archive of a site on this machine. You can copy that archive somewhere else later. You and an agent use the same commands, and a missing host, path, or password is something you supply.</p>
           <div class="cta-row">
-            <a class="stamp" href="#start">Get started</a>
-            <a class="stamp stamp--ghost" href="https://github.com/mikeybeck/local-backup">GitHub</a>
+            <a class="stamp" href="docs/install.html">Get started</a>
+            <a class="stamp stamp--ghost" href="https://github.com/mikeybeck/BackupBinder">GitHub</a>
           </div>
           <dl class="cross-check" aria-label="Trust cross-check">
             <div>
@@ -59,8 +60,8 @@
         <div class="folder__spine" aria-hidden="true"></div>
         <div class="folder__tab-label" aria-hidden="true">What it does</div>
         <div class="folder__face">
-          <h2 id="what-title">One contract: sources, snapshot, destinations, restore.</h2>
-          <p class="section-lede">BackupBinder archives a site on this machine. A site is a directory you care about: files by default, with optional addons for site types like WordPress.</p>
+          <h2 id="what-title">A backup has four parts.</h2>
+          <p class="section-lede">The site is a directory on this machine. Files are always included. A database dump is included when an addon, such as the WordPress one, says the site has a database.</p>
           <ol class="flow">
             <li>
               <strong>Capture</strong>
@@ -76,7 +77,7 @@
             </li>
             <li>
               <strong>Prove restore</strong>
-              <span>Test into an empty scratch directory. Never onto the live site root.</span>
+              <span>Test into an empty scratch directory, away from the live site.</span>
             </li>
           </ol>
         </div>
@@ -86,20 +87,20 @@
         <div class="folder__spine" aria-hidden="true"></div>
         <div class="folder__tab-label" aria-hidden="true">How you use it</div>
         <div class="folder__face">
-          <h2 id="how-title">Three doors. Same backup contract.</h2>
-          <p class="section-lede">Humans and agents share one command catalog. Every command prints JSON. The localhost UI is for setup and trust; agents are not expected to drive it.</p>
+          <h2 id="how-title">The browser, the command line, or an agent.</h2>
+          <p class="section-lede">They run the same backup. Every command prints JSON, so a script or an agent can read the result. The browser is there for you to set a site up and to read the last run.</p>
           <ul class="doors">
             <li>
-              <h3>Localhost UI</h3>
-              <p><code>serve</code> on this machine. Set up a backup, then read last run and restore confidence.</p>
+              <h3>Browser</h3>
+              <p><code>serve</code> on this machine. Set up a backup, then read the last run and whether a restore has been checked.</p>
             </li>
             <li>
-              <h3>JSON CLI</h3>
-              <p>Scriptable setup, backup, verify, and restore. Failures are structured, not scraped from logs.</p>
+              <h3>Command line</h3>
+              <p>Setup, backup, check, and restore from the terminal. A failure comes back as JSON with a code and a message.</p>
             </li>
             <li>
-              <h3>Agent / MCP</h3>
-              <p>stdio MCP over the same tools. Identify the exact site before mutating. Never invent access fields.</p>
+              <h3>Agent</h3>
+              <p>An agent talks to the same tools over stdio MCP. It names the exact site before it changes anything, and it asks you for a host, a user, or a key.</p>
             </li>
           </ul>
         </div>
@@ -109,14 +110,14 @@
         <div class="folder__spine" aria-hidden="true"></div>
         <div class="folder__tab-label" aria-hidden="true">Trust</div>
         <div class="folder__face">
-          <h2 id="trust-title">Trust is a restore you can run, not a green light.</h2>
-          <p class="section-lede">BackupBinder refuses the shortcuts that make backups look fine while skipping the hard parts.</p>
+          <h2 id="trust-title">You can check that a restore works.</h2>
+          <p class="section-lede">A restore into an empty folder is how you know the archive is good. These rules are on every run.</p>
           <ul class="trust-list">
-            <li>Restore only into an empty scratch directory: never the live root, its parents, or the repository.</li>
-            <li>Database passwords and destination secrets stay out of site JSON and tool output.</li>
-            <li>Mutations need an exact site match: id and root, not a fuzzy name.</li>
-            <li>Local-only is a complete backup. Remotes are copies of a finished archive.</li>
-            <li>WordPress is one shipped addon. Unmatched directories stay files-only.</li>
+            <li>A restore goes into an empty folder. The live site, a folder inside it, a parent of it, and the repository are refused.</li>
+            <li>Database passwords and destination secrets stay out of the site file and out of command output.</li>
+            <li>A change needs the site's id and its exact root.</li>
+            <li>A backup with no remote is finished. A remote is a copy of that archive.</li>
+            <li>WordPress is one shipped addon. A directory that matches no addon is files only.</li>
           </ul>
         </div>
       </section>
@@ -125,16 +126,16 @@
         <div class="folder__spine" aria-hidden="true"></div>
         <div class="folder__tab-label" aria-hidden="true">Get started</div>
         <div class="folder__face">
-          <h2 id="start-title">Build it. Point it. Back something up.</h2>
-          <p class="section-lede">The binary is still named <code>local-backup</code>. Data lives under <code>var/</code> (or <code>--home</code>). Requires Go to build; restic on <code>PATH</code> or under <code>.tools/</code>.</p>
-          <pre class="sheet" tabindex="0"><code>git clone https://github.com/mikeybeck/local-backup.git
-cd local-backup
-go build -o bin/local-backup ./cmd/local-backup
-./bin/local-backup setup --path /path/to/site
-./bin/local-backup serve --host 127.0.0.1 --port 47831</code></pre>
+          <h2 id="start-title">Build it, then point it at a site.</h2>
+          <p class="section-lede">Data lives under <code>var/</code>, or the directory you pass with <code>--home</code>. You need Go to build it, and restic on <code>PATH</code> or under <code>.tools/</code>. The <a href="docs/install.html">install page</a> covers rclone, <code>doctor</code>, and the browser.</p>
+          <pre class="sheet" tabindex="0"><code>git clone https://github.com/mikeybeck/BackupBinder.git
+cd BackupBinder
+go build -o bin/backupbinder ./cmd/backupbinder
+./bin/backupbinder setup --path /path/to/site
+./bin/backupbinder serve --host 127.0.0.1 --port 47831</code></pre>
           <div class="cta-row">
-            <a class="stamp" href="https://github.com/mikeybeck/local-backup">Open the repository</a>
-            <a class="stamp stamp--ghost" href="https://github.com/mikeybeck/local-backup#run">Read the runbook</a>
+            <a class="stamp" href="docs/install.html">Read the install page</a>
+            <a class="stamp stamp--ghost" href="https://github.com/mikeybeck/BackupBinder">Open the repository</a>
           </div>
         </div>
       </section>

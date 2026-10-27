@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>Install — BackupBinder</title>
+  <meta name="description" content="Build backupbinder, choose a data directory, and check that restic, rclone, rsync, and ssh are available."/>
+  <link rel="preconnect" href="https://fonts.googleapis.com"/>
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+  <link href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;650;700;800&family=Source+Sans+3:ital,wght@0,400;0,600;0,700;1,400&display=swap" rel="stylesheet"/>
+  <link rel="stylesheet" href="../styles.css"/>
+</head>
+<body>
+  <a class="skip" href="#main">Skip to content</a>
+
+  <div class="cabinet">
+    <header class="drawer-chrome">
+      <div class="handle" aria-hidden="true"></div>
+      <nav class="hanging-tabs" aria-label="Primary">
+        <a class="tab tab--brand" href="../index.html">BackupBinder</a>
+        <a class="tab" href="index.html" aria-current="page">Docs</a>
+      </nav>
+    </header>
+
+    <main id="main">
+      <section class="folder folder--doc" aria-labelledby="doc-title">
+        <div class="folder__spine" aria-hidden="true"></div>
+        <div class="folder__tab-label" aria-hidden="true">Install</div>
+        <div class="folder__face">
+          <h1 id="doc-title">Build it on this machine.</h1>
+          <p class="lede">You need Go to compile the program, and restic to store the archive. BackupBinder does not download restic for you.</p>
+          <nav class="doc-index" aria-label="Handbook">
+            <a href="index.html">Handbook</a>
+            <a href="install.html" aria-current="page">Install</a>
+            <a href="first-backup.html">First backup</a>
+            <a href="restore.html">Restore</a>
+            <a href="schedules.html">Schedules</a>
+            <a href="destinations.html">Destinations</a>
+            <a href="agents.html">Agents</a>
+          </nav>
+          <div class="doc-prose">
+            <h2>Build</h2>
+            <p>From a checkout of the repository:</p>
+            <pre class="sheet" tabindex="0"><code>git clone https://github.com/mikeybeck/BackupBinder.git
+cd BackupBinder
+go build -o bin/backupbinder ./cmd/backupbinder</code></pre>
+            <p>The examples below assume you are in that directory and the binary is <code>bin/backupbinder</code>.</p>
+
+            <h2>Where the data goes</h2>
+            <p>Runs, the registry, site files, and secrets live in one data directory. In this checkout that directory is <code>var/</code>. Pass <code>--home</code>, or set <code>BACKUPBINDER_HOME</code>, to put it somewhere else.</p>
+            <p>Leave <code>var/</code> and <code>.tools/</code> out of git. <code>var/secrets/</code> holds the restic password and destination credentials, mode <code>0600</code>.</p>
+
+            <h2>Restic</h2>
+            <p>Restic is a separate program. BackupBinder looks for it in this order:</p>
+            <ol>
+              <li><code>BACKUPBINDER_RESTIC</code>, when that variable is set. The path has to be a file.</li>
+              <li><code>.tools/restic</code> in this checkout, when that file exists.</li>
+              <li><code>restic</code> on <code>PATH</code>.</li>
+            </ol>
+            <p>A backup needs restic. The other tools below are for particular kinds of copy.</p>
+
+            <h2>Rclone, rsync, and ssh</h2>
+            <p>Google Drive uses rclone. The lookup is the same shape: <code>BACKUPBINDER_RCLONE</code> if set, then <code>.tools/rclone</code>, then <code>rclone</code> on <code>PATH</code>. A local backup, and copies to SFTP, disk, S3, or B2, do not need rclone.</p>
+            <p>A site that lives on a server is copied here with rsync over SSH, then archived. Those two programs come from the system. SFTP uses the SSH keys already on this machine. There is no field for an SSH password.</p>
+
+            <h2>See what this machine has</h2>
+            <p><code>doctor</code> prints the data directory, whether restic, rclone, rsync, and ssh were found, an MCP config, and the cron line you would install yourself. It runs when restic is missing. It does not install anything.</p>
+            <pre class="sheet" tabindex="0"><code>./bin/backupbinder doctor</code></pre>
+            <p>The backup path is ready when restic is found. <code>mcp</code> does not start until then. The cron line in the report is text for you to install. <code>doctor</code> does not add it to crontab.</p>
+
+            <h2>Open the browser</h2>
+            <p><code>serve</code> binds to this machine only.</p>
+            <pre class="sheet" tabindex="0"><code>./bin/backupbinder serve --host 127.0.0.1 --port 47831</code></pre>
+            <p>Then open <a href="http://127.0.0.1:47831/">http://127.0.0.1:47831/</a>. From there, choose <strong>Set up a backup</strong>. The <a href="first-backup.html">first backup</a> page is the same walk, from the command line.</p>
+
+            <h2>License</h2>
+            <p>BackupBinder is free software under the GNU General Public License, version 3 or later. The text is the LICENSE file in the <a href="https://github.com/mikeybeck/BackupBinder">repository</a>.</p>
+          </div>
+          <nav class="doc-pager" aria-label="Adjacent pages">
+            <a href="index.html"><span>Previous</span> Handbook</a>
+            <a class="next" href="first-backup.html"><span>Next</span> First backup</a>
+          </nav>
+        </div>
+      </section>
+    </main>
+
+    <footer class="drawer-foot">
+      <p><strong>BackupBinder</strong> · Site backups on this machine</p>
+      <p class="muted">Open source. No cloud account required for a complete local backup.</p>
+    </footer>
+  </div>
+</body>
+</html>

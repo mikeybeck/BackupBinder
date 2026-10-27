@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"local-backup/internal/model"
+	"backupbinder/internal/model"
 )
 
 func TestFixtureBackupAndScratchRestore(t *testing.T) {
@@ -24,7 +24,7 @@ func TestFixtureBackupAndScratchRestore(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if manifest.Schema != "local-backup.manifest/v1" || manifest.Snapshot.ResticSnapshotID == "" {
+	if manifest.Schema != "backupbinder.manifest/v1" || manifest.Snapshot.ResticSnapshotID == "" {
 		t.Fatalf("manifest snapshot %#v", manifest.Snapshot)
 	}
 	if manifest.Restore.Confidence != "never" || len(manifest.Restore.Steps) < 4 {
@@ -79,7 +79,7 @@ func TestFixtureBackupAndScratchRestore(t *testing.T) {
 		t.Fatal("backup changed the live site")
 	}
 	verified, err := application.Verify("fixture-wordpress", manifest.Snapshot.RunID)
-	if err != nil || !verified.Readable || verified.ResticCheck != "passed" {
+	if err != nil || !verified.OK || !verified.Readable || !verified.ManifestPresent || verified.ResticCheck != "passed" {
 		t.Fatal(err, verified)
 	}
 	restored, err := application.TestRestore("fixture-wordpress", manifest.Snapshot.RunID, "")
@@ -194,7 +194,7 @@ func TestScheduleRunsBackup(t *testing.T) {
 		t.Fatal(err)
 	}
 	when := time.Date(2026, 9, 25, 3, 15, 40, 0, time.UTC)
-	if _, err := application.SetSchedule("cron-site", "15 3 * * *", true); err != nil {
+	if _, err := application.SetSchedule("cron-site", "15 3 * * *", boolPtr(true)); err != nil {
 		t.Fatal(err)
 	}
 	first, err := application.RunScheduled(when)

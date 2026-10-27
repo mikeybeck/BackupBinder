@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"local-backup/internal/fail"
+	"backupbinder/internal/fail"
 )
 
 func TestParseFlags(t *testing.T) {

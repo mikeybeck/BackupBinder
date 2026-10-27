@@ -5,7 +5,7 @@ import (
 	"strings"
 	"time"
 
-	"local-backup/internal/model"
+	"backupbinder/internal/model"
 )
 
 const longRunThreshold = 30 * time.Minute

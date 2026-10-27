@@ -5,18 +5,19 @@ import (
 	"path/filepath"
 	"strings"
 
-	"local-backup/internal/addon"
-	"local-backup/internal/discover"
-	"local-backup/internal/fail"
-	"local-backup/internal/model"
-	"local-backup/internal/store"
+	"backupbinder/internal/addon"
+	"backupbinder/internal/discover"
+	"backupbinder/internal/fail"
+	"backupbinder/internal/model"
+	"backupbinder/internal/store"
 )
 
 // DatabaseInput is the site-page and set_database form.
+// A nil Enabled leaves the saved dump on or off.
 // An empty password leaves the saved secret unchanged.
 // PreferConfig clears a saved password and reads the site config again.
 type DatabaseInput struct {
-	Enabled      bool
+	Enabled      *bool
 	Name         string
 	User         string
 	Host         string
@@ -32,8 +33,20 @@ func (a *App) SetDatabase(siteID string, in DatabaseInput) (model.Site, error) {
 	if err != nil {
 		return model.Site{}, err
 	}
-	if !in.Enabled {
-		if err := a.DB.SaveAdapter(site.ID, site.Adapter, withoutDatabase(site.Sources)); err != nil {
+	if in.Enabled == nil {
+		if !databaseFieldsSet(in) {
+			return site, nil
+		}
+		if model.DatabaseSource(site) == nil {
+			return model.Site{}, fail.New("bad_database", "The database dump is off. Pass --enabled true to turn it on.")
+		}
+		on := true
+		in.Enabled = &on
+	}
+	if !*in.Enabled {
+		sources := withoutDatabase(site.Sources)
+		markFilesOnly(sources)
+		if err := a.DB.SaveAdapter(site.ID, site.Adapter, sources); err != nil {
 			return model.Site{}, err
 		}
 		_ = os.Remove(a.databaseSecretPath(site.ID))
@@ -62,13 +75,19 @@ func (a *App) SetDatabase(siteID string, in DatabaseInput) (model.Site, error) {
 	if err := a.applyDatabasePassword(&db, site, in); err != nil {
 		return model.Site{}, err
 	}
-	if err := a.DB.SaveAdapter(site.ID, adapter, withDatabase(site.Sources, db)); err != nil {
+	sources := withDatabase(site.Sources, db)
+	clearFilesOnly(sources)
+	if err := a.DB.SaveAdapter(site.ID, adapter, sources); err != nil {
 		return model.Site{}, err
 	}
 	if err := a.saveSiteFile(site.ID); err != nil {
 		return model.Site{}, err
 	}
 	return a.DB.GetSite(site.ID)
+}
+
+func databaseFieldsSet(in DatabaseInput) bool {
+	return strings.TrimSpace(in.Name) != "" || strings.TrimSpace(in.User) != "" || strings.TrimSpace(in.Host) != "" || in.Password != "" || in.PreferConfig
 }
 
 func (a *App) databaseSource(site model.Site, in DatabaseInput) (model.Source, string, error) {
@@ -167,6 +186,34 @@ func withoutDatabase(sources []model.Source) []model.Source {
 		}}
 	}
 	return out
+}
+
+func markFilesOnly(sources []model.Source) {
+	for i := range sources {
+		if sources[i].Kind == "files" {
+			sources[i].Method = "files_only"
+		}
+	}
+}
+
+func clearFilesOnly(sources []model.Source) {
+	for i := range sources {
+		if sources[i].Kind == "files" && sources[i].Method == "files_only" {
+			sources[i].Method = ""
+		}
+	}
+}
+
+func databaseDeclined(site model.Site) bool {
+	if model.DatabaseSource(site) != nil {
+		return false
+	}
+	for _, source := range site.Sources {
+		if source.Kind == "files" && source.Method == "files_only" {
+			return true
+		}
+	}
+	return false
 }
 
 func withDatabase(sources []model.Source, db model.Source) []model.Source {

@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"local-backup/internal/fail"
+	"backupbinder/internal/fail"
 )
 
 // Matches reports whether expr matches when. Weekday 0 and 7 are Sunday.

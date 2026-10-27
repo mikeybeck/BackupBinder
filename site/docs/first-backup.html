@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>First backup — BackupBinder</title>
+  <meta name="description" content="Set up a BackupBinder site from a directory or a server, then see what a run stores."/>
+  <link rel="preconnect" href="https://fonts.googleapis.com"/>
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+  <link href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;650;700;800&family=Source+Sans+3:ital,wght@0,400;0,600;0,700;1,400&display=swap" rel="stylesheet"/>
+  <link rel="stylesheet" href="../styles.css"/>
+</head>
+<body>
+  <a class="skip" href="#main">Skip to content</a>
+
+  <div class="cabinet">
+    <header class="drawer-chrome">
+      <div class="handle" aria-hidden="true"></div>
+      <nav class="hanging-tabs" aria-label="Primary">
+        <a class="tab tab--brand" href="../index.html">BackupBinder</a>
+        <a class="tab" href="index.html" aria-current="page">Docs</a>
+      </nav>
+    </header>
+
+    <main id="main">
+      <section class="folder folder--doc" aria-labelledby="doc-title">
+        <div class="folder__spine" aria-hidden="true"></div>
+        <div class="folder__tab-label" aria-hidden="true">First backup</div>
+        <div class="folder__face">
+          <h1 id="doc-title">Point it at a folder or a server.</h1>
+          <p class="lede">Setup walks the decisions that change a backup. Each reply tells you the next decision. Answer that one, then call setup again.</p>
+          <nav class="doc-index" aria-label="Handbook">
+            <a href="index.html">Handbook</a>
+            <a href="install.html">Install</a>
+            <a href="first-backup.html" aria-current="page">First backup</a>
+            <a href="restore.html">Restore</a>
+            <a href="schedules.html">Schedules</a>
+            <a href="destinations.html">Destinations</a>
+            <a href="agents.html">Agents</a>
+          </nav>
+          <div class="doc-prose">
+            <h2>A folder on this machine</h2>
+            <p><code>--path</code> is a directory here. Pass the site's <code>--id</code> and <code>--root</code> on later calls, once setup has given them to you.</p>
+            <pre class="sheet" tabindex="0"><code>./bin/backupbinder setup --path /path/to/site</code></pre>
+            <p>Each response has <code>phase</code> and <code>next</code>. Read <code>next</code>, send only what it asks for, and stop when <code>phase</code> is <code>ready</code>. If <code>next.options</code> is set, pick one option. Do not send every field from every option.</p>
+            <p>You can decline a step:</p>
+            <ul>
+              <li><code>--no-database</code> stores files only.</li>
+              <li><code>--remote none</code> keeps the archive on this machine.</li>
+              <li><code>--no-schedule</code> leaves the schedule off.</li>
+              <li><code>--no-backup</code> finishes setup without taking a backup now.</li>
+            </ul>
+            <p>If that directory is already a site, setup returns the existing site. It does not create a second one.</p>
+
+            <h2>A server</h2>
+            <p>A server is a host, a user, and a remote path, passed together. Do not also pass <code>--path</code>.</p>
+            <pre class="sheet" tabindex="0"><code>./bin/backupbinder setup --host files.example --user backup --remote-path /var/www/site --name Example</code></pre>
+            <p>The next backup copies that server into <code>var/copies/</code> with rsync over SSH, then archives the copy. SSH uses the keys already on this machine. Saving a new server replaces the previous one. <code>localhost</code> in the server's database config means the database on that server.</p>
+
+            <h2>In the browser</h2>
+            <p>Run <code>serve</code>, open the UI, and choose <strong>Set up a backup</strong>. Each page is one decision, with every field for that decision. Back returns to the previous page with the values you saved. Retention and speed limits stay on the site page after setup.</p>
+
+            <h2>What the run stores</h2>
+            <p>Files are always in the backup. Cache directories, <code>node_modules</code>, and similar junk are left out.</p>
+            <p>A database dump is included when the site's addon defines one, or when you set a database yourself. The WordPress addon ships with the program. It looks for a WordPress tree, then tries <code>wp db export</code> and, if that fails, <code>mysqldump</code>. On a server, that dump runs on the server and is copied back.</p>
+            <p>If no addon matches, or you pass <code>--adapter files</code>, the backup is files only. A files-only site has no database password. <code>set_adapter</code> reads the directory again and saves the matching addon on a site you already have. The schedule, the server, and destinations stay.</p>
+            <p>The dump password is read from the config file the addon names. For WordPress that file is <code>wp-config.php</code>. If you save a password into <code>var/secrets/</code>, it is read from there instead. It is not written into the site file, and commands do not print it.</p>
+            <p>You can add a site type, or replace one, by putting a JSON file in <code>addons/</code> next to the program. The same id replaces the shipped addon. A new id adds a type. The file names the marker files, what to leave out, how to read versions, and which dump commands to run.</p>
+            <p>Each successful run writes <code>var/manifests/&lt;site&gt;/&lt;run&gt;.json</code> and a row in <code>var/registry.sqlite</code>. The manifest names the site, the files, the database when one was captured, versions when they can be read, the size, the time, where the snapshot was written, the restore commands, and restore confidence. Confidence stays <code>never</code> until a <a href="restore.html">scratch restore</a> has passed.</p>
+
+            <h2>The site file</h2>
+            <p>The browser and the commands write <code>var/sites/&lt;id&gt;.json</code>. You can edit that file. The next time the program opens, a newer file replaces the registry row. The same refresh happens when <code>serve</code> or <code>mcp</code> handles a request.</p>
+            <p>Passwords, access keys, and secret keys are rejected in that file. They stay in <code>var/secrets/</code>.</p>
+          </div>
+          <nav class="doc-pager" aria-label="Adjacent pages">
+            <a href="install.html"><span>Previous</span> Install</a>
+            <a class="next" href="restore.html"><span>Next</span> Restore</a>
+          </nav>
+        </div>
+      </section>
+    </main>
+
+    <footer class="drawer-foot">
+      <p><strong>BackupBinder</strong> · Site backups on this machine</p>
+      <p class="muted">Open source. No cloud account required for a complete local backup.</p>
+    </footer>
+  </div>
+</body>
+</html>

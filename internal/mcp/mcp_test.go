@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"local-backup/internal/agent"
+	"backupbinder/internal/agent"
 )
 
 func TestServeListsSetupAndCallsAgent(t *testing.T) {

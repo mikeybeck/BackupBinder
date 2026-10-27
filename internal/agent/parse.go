@@ -24,12 +24,18 @@ func Parse(name string, argv []string) (map[string]any, error) {
 	if err := fs.Parse(argv); err != nil {
 		return nil, err
 	}
+	visited := map[string]bool{}
+	fs.Visit(func(f *flag.Flag) { visited[f.Name] = true })
 	out := map[string]any{}
 	for key, value := range strings {
-		out[key] = *value
+		if visited[key] {
+			out[key] = *value
+		}
 	}
 	for key, value := range bools {
-		out[key] = *value
+		if visited[key] {
+			out[key] = *value
+		}
 	}
 	return out, nil
 }
@@ -54,4 +60,17 @@ func asBool(args map[string]any, key string) bool {
 	default:
 		return false
 	}
+}
+
+func asBoolPtr(args map[string]any, key string) *bool {
+	if _, ok := args[key]; !ok {
+		return nil
+	}
+	value := asBool(args, key)
+	return &value
+}
+
+func argSet(args map[string]any, key string) bool {
+	_, ok := args[key]
+	return ok
 }

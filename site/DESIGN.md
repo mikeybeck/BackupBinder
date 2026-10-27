@@ -245,6 +245,9 @@ Tabs and peeks are open at the bottom (top radii only: tab ~5px, folder tab ~4px
 ### Command Sheet
 - Cream inset with 3px metal-deep border; mono commands; no card chrome beyond the sheet
 
+### Handbook (`site/docs/`)
+Reading pages use the same drawer, one open folder, and the cream command sheet. A typed index (uppercase Archivo, kraft underline, stamp underline on the current page) sits under the lede. Body copy stays on the 38rem measure. Section headings have more space above than below. Previous / next links are a ruled row at the bottom of the folder: small uppercase label, page name in Archivo. Docs pages do not repeat the landing hero entrance.
+
 ### Signature: Folder Peek
 - Deep-manila strip hanging from the hero bottom, uppercase label linking to the next section; hover kraft + lift
 

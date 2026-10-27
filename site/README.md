@@ -1,6 +1,6 @@
 # BackupBinder marketing site
 
-Static landing page. Design system: [DESIGN.md](DESIGN.md).
+Static landing page, plus a handbook under [`docs/`](docs/). Design system: [DESIGN.md](DESIGN.md).
 
 ## Local preview
 

@@ -6,11 +6,11 @@ import (
 	"strconv"
 	"strings"
 
-	"local-backup/internal/archive"
-	"local-backup/internal/destination"
-	"local-backup/internal/fail"
-	"local-backup/internal/model"
-	"local-backup/internal/store"
+	"backupbinder/internal/archive"
+	"backupbinder/internal/destination"
+	"backupbinder/internal/fail"
+	"backupbinder/internal/model"
+	"backupbinder/internal/store"
 )
 
 // RetentionReport is the result of saving or applying snapshot rules.

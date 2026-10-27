@@ -7,8 +7,8 @@ import (
 	"strings"
 	"testing"
 
-	"local-backup/internal/archive"
-	"local-backup/internal/model"
+	"backupbinder/internal/archive"
+	"backupbinder/internal/model"
 )
 
 func TestAddDestinationRejectsUnsafeTargets(t *testing.T) {
@@ -36,7 +36,7 @@ func TestAddDestinationRejectsUnsafeTargets(t *testing.T) {
 		{Kind: "disk", Path: filepath.Dir(repo)},
 		{Kind: "s3", Bucket: "bad bucket"},
 		{Kind: "s3", Bucket: "site-backups", Endpoint: "http://evil host"},
-		{Kind: "gdrive", Host: "gdrive;rm", Path: "local-backup/site"},
+		{Kind: "gdrive", Host: "gdrive;rm", Path: "backupbinder/site"},
 		{Kind: "gdrive", Host: "gdrive", Path: "local backup/site"},
 	}
 	for _, dest := range bad {
@@ -50,7 +50,7 @@ func TestAddDestinationRejectsUnsafeTargets(t *testing.T) {
 	if _, err := application.AddDestination("notes", model.Destination{Kind: "s3", Bucket: "site-backups"}, "key\n", "secret"); err == nil {
 		t.Fatal("newline in a credential was accepted")
 	}
-	if _, err := application.AddDestination("notes", model.Destination{Kind: "gdrive", Host: "gdrive", Path: "local-backup/site"}, "key", "secret"); err == nil {
+	if _, err := application.AddDestination("notes", model.Destination{Kind: "gdrive", Host: "gdrive", Path: "backupbinder/site"}, "key", "secret"); err == nil {
 		t.Fatal("gdrive accepted a secret")
 	}
 }
@@ -69,16 +69,16 @@ func TestAddDestinationStoresGoogleDrive(t *testing.T) {
 		t.Fatal(err)
 	}
 	dest, err := application.AddDestination("notes", model.Destination{
-		Kind: "gdrive", Host: "gdrive", Path: "local-backup/notes", Enabled: true,
+		Kind: "gdrive", Host: "gdrive", Path: "backupbinder/notes", Enabled: true,
 	}, "", "")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if dest.ID != "gdrive-1" || dest.Host != "gdrive" || dest.Path != "local-backup/notes" || !dest.Enabled {
+	if dest.ID != "gdrive-1" || dest.Host != "gdrive" || dest.Path != "backupbinder/notes" || !dest.Enabled {
 		t.Fatalf("%#v", dest)
 	}
 	url, err := archive.DestinationURL(dest)
-	if err != nil || url != "rclone:gdrive:local-backup/notes" {
+	if err != nil || url != "rclone:gdrive:backupbinder/notes" {
 		t.Fatal(url, err)
 	}
 }
@@ -97,13 +97,13 @@ func TestRemoveAndDisableDestination(t *testing.T) {
 		t.Fatal(err)
 	}
 	first, err := application.AddDestination("notes", model.Destination{
-		Kind: "gdrive", Host: "gdrive", Path: "local-backup/a", Enabled: true,
+		Kind: "gdrive", Host: "gdrive", Path: "backupbinder/a", Enabled: true,
 	}, "", "")
 	if err != nil {
 		t.Fatal(err)
 	}
 	second, err := application.AddDestination("notes", model.Destination{
-		Kind: "gdrive", Host: "gdrive", Path: "local-backup/b", Enabled: true,
+		Kind: "gdrive", Host: "gdrive", Path: "backupbinder/b", Enabled: true,
 	}, "", "")
 	if err != nil {
 		t.Fatal(err)
@@ -155,7 +155,7 @@ func TestAddDestinationRejectsMissingGdriveHost(t *testing.T) {
 		t.Fatal(err)
 	}
 	_, err := application.AddDestination("notes", model.Destination{
-		Kind: "gdrive", Path: "local-backup/notes", Enabled: true,
+		Kind: "gdrive", Path: "backupbinder/notes", Enabled: true,
 	}, "", "")
 	if err == nil {
 		t.Fatal("expected missing host")
@@ -179,7 +179,7 @@ func TestAddDestinationDefaultsSoleGdriveRemote(t *testing.T) {
 		t.Fatal(err)
 	}
 	dest, err := application.AddDestination("notes", model.Destination{
-		Kind: "gdrive", Path: "local-backup/notes", Enabled: true,
+		Kind: "gdrive", Path: "backupbinder/notes", Enabled: true,
 	}, "", "")
 	if err != nil {
 		t.Fatal(err)
@@ -203,7 +203,7 @@ func TestAddDestinationRejectsMissingRcloneRemote(t *testing.T) {
 		t.Fatal(err)
 	}
 	_, err := application.AddDestination("notes", model.Destination{
-		Kind: "gdrive", Host: "gdrive", Path: "local-backup/notes", Enabled: false,
+		Kind: "gdrive", Host: "gdrive", Path: "backupbinder/notes", Enabled: false,
 	}, "", "")
 	if err == nil {
 		t.Fatal("expected missing remote")
@@ -230,7 +230,7 @@ func TestCreateBackupRejectsMissingRcloneRemoteBeforeArchive(t *testing.T) {
 		t.Fatal(err)
 	}
 	if _, err := application.AddDestination("notes", model.Destination{
-		Kind: "gdrive", Host: "gdrive", Path: "local-backup/notes", Enabled: true,
+		Kind: "gdrive", Host: "gdrive", Path: "backupbinder/notes", Enabled: true,
 	}, "", ""); err != nil {
 		t.Fatal(err)
 	}
@@ -266,7 +266,7 @@ func fakeRclone(t *testing.T, listed string, aboutOK bool) {
 	if err := os.WriteFile(script, []byte(body), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	t.Setenv("LOCAL_BACKUP_RCLONE", script)
+	t.Setenv("BACKUPBINDER_RCLONE", script)
 }
 
 func TestAddDestinationStoresS3KeysOutsideTheRegistry(t *testing.T) {

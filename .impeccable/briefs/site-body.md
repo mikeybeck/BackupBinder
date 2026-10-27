@@ -7,7 +7,7 @@ Primary target: `site/`
 Audience: self-hosters and anyone who wants trustworthy site/folder backups with minimum hassle  
 Job: decide BackupBinder is the local-first backup contract worth trying; act via Get started / GitHub  
 Action: Get started (primary); GitHub secondary  
-Constraints: no invented testimonials/customers/benchmarks; WordPress is one addon not the product; local-only is complete; remotes optional; restore only to empty scratch; binary still named `local-backup`
+Constraints: no invented testimonials/customers/benchmarks; WordPress is one addon not the product; local-only is complete; remotes optional; restore only to empty scratch
 
 ## Direction contract
 

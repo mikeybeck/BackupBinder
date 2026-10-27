@@ -45,7 +45,7 @@ func TestIdentifyDoesNotSubstituteASimilarSite(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(missing.Matches) != 0 || !strings.Contains(missing.Warning, "Do not back up") {
+	if len(missing.Matches) != 0 || !strings.Contains(missing.Warning, "Do not back up") || len(missing.Registered) != 2 {
 		t.Fatalf("%#v", missing)
 	}
 }

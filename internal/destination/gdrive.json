@@ -5,7 +5,7 @@
   "offsite": true,
   "fields": [
     {"name": "host", "label": "Google Drive remote", "required": true, "pattern": "hostname", "setup": "host", "placeholder": "gdrive", "choices": "rclone_drive"},
-    {"name": "path", "label": "Folder in Google Drive", "required": true, "pattern": "drive_path", "setup": "remote-path", "placeholder": "local-backup/site"}
+    {"name": "path", "label": "Folder in Google Drive", "required": true, "pattern": "drive_path", "setup": "remote-path", "placeholder": "backupbinder/site"}
   ],
   "url": "rclone:{host}:{path_trim}",
   "url_when_path_empty": "rclone:{host}:/",

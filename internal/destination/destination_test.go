@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"local-backup/internal/model"
+	"backupbinder/internal/model"
 )
 
 func TestLoadShippedKinds(t *testing.T) {
@@ -59,7 +59,7 @@ func TestURLTemplates(t *testing.T) {
 		{"b2", model.Destination{Bucket: "bucket", Prefix: "site"}, "b2:bucket:site"},
 		{"b2", model.Destination{Bucket: "bucket"}, "b2:bucket:/"},
 		{"disk", model.Destination{Path: "/var/backups/site"}, "/var/backups/site"},
-		{"gdrive", model.Destination{Host: "gdrive", Path: "local-backup/site"}, "rclone:gdrive:local-backup/site"},
+		{"gdrive", model.Destination{Host: "gdrive", Path: "backupbinder/site"}, "rclone:gdrive:backupbinder/site"},
 		{"gdrive", model.Destination{Host: "gdrive", Path: "/"}, "rclone:gdrive:/"},
 	}
 	for _, tc := range cases {
@@ -81,11 +81,11 @@ func TestValidateRequiresFields(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	err = gdrive.Validate(site, repo, model.Destination{Kind: "gdrive", Path: "local-backup/site"})
+	err = gdrive.Validate(site, repo, model.Destination{Kind: "gdrive", Path: "backupbinder/site"})
 	if err == nil || !strings.Contains(err.Error(), "Google Drive remote is required") {
 		t.Fatalf("expected required host, got %v", err)
 	}
-	if err := gdrive.CheckAccess(model.Destination{Kind: "gdrive", Path: "local-backup/site"}, false); err == nil {
+	if err := gdrive.CheckAccess(model.Destination{Kind: "gdrive", Path: "backupbinder/site"}, false); err == nil {
 		t.Fatal("expected CheckAccess to require host")
 	}
 }
@@ -164,13 +164,13 @@ func TestApplyDefaultsFillsSoleDriveRemote(t *testing.T) {
 	if err := os.WriteFile(script, []byte(body), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	t.Setenv("LOCAL_BACKUP_RCLONE", script)
+	t.Setenv("BACKUPBINDER_RCLONE", script)
 
 	kind, err := ByID("gdrive")
 	if err != nil {
 		t.Fatal(err)
 	}
-	dest := model.Destination{Kind: "gdrive", Path: "local-backup/site"}
+	dest := model.Destination{Kind: "gdrive", Path: "backupbinder/site"}
 	kind.ApplyDefaults(&dest)
 	if dest.Host != "gdrive" {
 		t.Fatalf("host %#v", dest.Host)
@@ -184,7 +184,7 @@ func TestCheckAccessRejectsMissingRcloneRemote(t *testing.T) {
 	if err := os.WriteFile(script, []byte(body), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	t.Setenv("LOCAL_BACKUP_RCLONE", script)
+	t.Setenv("BACKUPBINDER_RCLONE", script)
 
 	kind, err := ByID("gdrive")
 	if err != nil {
@@ -193,7 +193,7 @@ func TestCheckAccessRejectsMissingRcloneRemote(t *testing.T) {
 	if !kind.HasHook("rclone_remote") {
 		t.Fatal("gdrive missing rclone_remote hook")
 	}
-	err = kind.CheckAccess(model.Destination{Host: "gdrive", Path: "local-backup/site"}, false)
+	err = kind.CheckAccess(model.Destination{Host: "gdrive", Path: "backupbinder/site"}, false)
 	if err == nil {
 		t.Fatal("expected missing remote")
 	}
@@ -212,13 +212,13 @@ func TestCheckAccessAcceptsConfiguredRemote(t *testing.T) {
 	if err := os.WriteFile(script, []byte(body), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	t.Setenv("LOCAL_BACKUP_RCLONE", script)
+	t.Setenv("BACKUPBINDER_RCLONE", script)
 
 	kind, err := ByID("gdrive")
 	if err != nil {
 		t.Fatal(err)
 	}
-	dest := model.Destination{Host: "gdrive", Path: "local-backup/site"}
+	dest := model.Destination{Host: "gdrive", Path: "backupbinder/site"}
 	if err := kind.CheckAccess(dest, false); err != nil {
 		t.Fatal(err)
 	}
@@ -240,7 +240,7 @@ func TestCheckAccessReportsSlowRcloneAbout(t *testing.T) {
 	if err := os.WriteFile(script, []byte(body), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	t.Setenv("LOCAL_BACKUP_RCLONE", script)
+	t.Setenv("BACKUPBINDER_RCLONE", script)
 	previous := rcloneProbeTimeout
 	rcloneProbeTimeout = 200 * time.Millisecond
 	t.Cleanup(func() { rcloneProbeTimeout = previous })
@@ -249,7 +249,7 @@ func TestCheckAccessReportsSlowRcloneAbout(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	err = kind.CheckAccess(model.Destination{Host: "gdrive", Path: "local-backup/site"}, true)
+	err = kind.CheckAccess(model.Destination{Host: "gdrive", Path: "backupbinder/site"}, true)
 	if err == nil || !strings.Contains(err.Error(), "in time") || !strings.Contains(err.Error(), "gdrive") {
 		t.Fatal(err)
 	}

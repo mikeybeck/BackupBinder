@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"local-backup/internal/model"
+	"backupbinder/internal/model"
 )
 
 func TestSetDatabaseToggleAndPassword(t *testing.T) {
@@ -29,7 +29,7 @@ func TestSetDatabaseToggleAndPassword(t *testing.T) {
 		t.Fatal("expected discovered database")
 	}
 
-	off, err := application.SetDatabase("fixture-wordpress", DatabaseInput{Enabled: false})
+	off, err := application.SetDatabase("fixture-wordpress", DatabaseInput{Enabled: boolPtr(false)})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -38,7 +38,7 @@ func TestSetDatabaseToggleAndPassword(t *testing.T) {
 	}
 
 	on, err := application.SetDatabase("fixture-wordpress", DatabaseInput{
-		Enabled: true, Password: "ui-secret-password",
+		Enabled: boolPtr(true), Password: "ui-secret-password",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -63,7 +63,7 @@ func TestSetDatabaseToggleAndPassword(t *testing.T) {
 	}
 
 	cleared, err := application.SetDatabase("fixture-wordpress", DatabaseInput{
-		Enabled: true, PreferConfig: true,
+		Enabled: boolPtr(true), PreferConfig: true,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -91,11 +91,11 @@ func TestSetDatabaseManualFields(t *testing.T) {
 	if _, err := application.Register(dir, "Notes", "notes", true); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := application.SetDatabase("notes", DatabaseInput{Enabled: true}); err == nil {
+	if _, err := application.SetDatabase("notes", DatabaseInput{Enabled: boolPtr(true)}); err == nil {
 		t.Fatal("expected missing connection fields")
 	}
 	saved, err := application.SetDatabase("notes", DatabaseInput{
-		Enabled: true, Name: "app", User: "backup", Host: "db.example", Password: "secret",
+		Enabled: boolPtr(true), Name: "app", User: "backup", Host: "db.example", Password: "secret",
 	})
 	if err != nil {
 		t.Fatal(err)

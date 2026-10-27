@@ -3,6 +3,7 @@ package sqlcheck
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -50,6 +51,46 @@ func TestFixtureDump(t *testing.T) {
 	}
 	if got.Inserts != 2 {
 		t.Fatalf("inserts %d", got.Inserts)
+	}
+}
+
+func TestAssessReaderMatchesAssess(t *testing.T) {
+	dumps := []string{
+		"CREATE TABLE `wp_options` (`option_value` longtext);\nINSERT INTO `wp_options` (`option_value`) VALUES ('a;b');\n",
+		"INSERT INTO wp_options (option_id) VALUES (1);\nCREATE TABLE wp_options (option_id bigint);\n",
+		"-- MariaDB dump 10.19\n--\nDROP TABLE IF EXISTS `wp_posts`;\nCREATE TABLE `wp_posts` (id bigint);\nINSERT INTO `wp_posts` (id) VALUES (1);\n",
+		"CREATE TABLE t (a int);\n",
+		"",
+		"\uFEFFCREATE TABLE t (a int);\nINSERT INTO t VALUES (1);\n",
+	}
+	root := moduleRoot(t)
+	text, err := os.ReadFile(filepath.Join(root, "fixtures", "wordpress-site", "database.sql"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	dumps = append(dumps, string(text))
+	body := strings.Repeat("a", 9000) + ";b"
+	dumps = append(dumps, "CREATE TABLE t (a int);\nINSERT INTO t VALUES ('"+body+"');\n")
+	for _, dump := range dumps {
+		want := Assess(dump)
+		got := AssessReader(strings.NewReader(dump))
+		if got.Importable != want.Importable || got.Reason != want.Reason || got.Inserts != want.Inserts || got.Creates != want.Creates || got.Statements != want.Statements || strings.Join(got.Tables, ",") != strings.Join(want.Tables, ",") {
+			t.Fatalf("stream %#v\nmemory %#v", got, want)
+		}
+	}
+}
+
+func TestAssessReaderReadsACreatePastTheFirstMegabyte(t *testing.T) {
+	var b strings.Builder
+	for b.Len() < (1<<20)+10 {
+		b.WriteString("-- comment\n")
+	}
+	b.WriteString("CREATE TABLE t (a int);\nINSERT INTO t VALUES (1);\n")
+	dump := b.String()
+	want := Assess(dump)
+	got := AssessReader(strings.NewReader(dump))
+	if !got.Importable || got.Reason != want.Reason || got.Creates != 1 || got.Inserts != 1 {
+		t.Fatalf("stream %#v memory %#v", got, want)
 	}
 }
 

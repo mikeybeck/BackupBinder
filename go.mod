@@ -1,4 +1,4 @@
-module local-backup
+module backupbinder
 
 go 1.26.5
 

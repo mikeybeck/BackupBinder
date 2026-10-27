@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"local-backup/internal/fail"
+	"backupbinder/internal/fail"
 )
 
 func TestFixtureWordPress(t *testing.T) {

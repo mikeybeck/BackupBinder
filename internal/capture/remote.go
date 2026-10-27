@@ -1,6 +1,7 @@
 package capture
 
 import (
+	"bytes"
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
@@ -11,9 +12,9 @@ import (
 	"strings"
 	"time"
 
-	"local-backup/internal/addon"
-	"local-backup/internal/fail"
-	"local-backup/internal/model"
+	"backupbinder/internal/addon"
+	"backupbinder/internal/fail"
+	"backupbinder/internal/model"
 )
 
 var (
@@ -51,7 +52,7 @@ func databaseOnServer(site model.Site, matched addon.Addon, output, secretDir st
 			if name != "mysqldump" || source == nil || source.Name == "" || source.User == "" {
 				return model.DBCapture{}, secrets, fail.New("step_failed", "Unknown database method "+name+".")
 			}
-			spec = addon.Dump{Engine: "mysqldump", TimeoutSec: 600, FailMessage: "mysqldump failed.", Report: "mysqldump"}
+			spec = addon.Dump{Engine: "mysqldump", TimeoutSec: 7200, FailMessage: "mysqldump failed.", Report: "mysqldump"}
 		}
 		report, found, runErr := runDumpRemote(matched, name, spec, site, output, secretDir, secrets)
 		secrets = found
@@ -138,25 +139,25 @@ func exportMySQLRemote(matched addon.Addon, spec addon.Dump, site model.Site, ou
 		return model.DBCapture{}, secrets, &fail.Error{Code: "step_failed", Message: "The database password contains a newline and cannot be passed safely.", Step: "database_dump"}
 	}
 	secrets = append(secrets, password)
-	remoteSQL, err := remoteTemp(site.ID, ".sql")
-	if err != nil {
-		return model.DBCapture{}, secrets, err
-	}
 	remoteCNF, err := remoteTemp(site.ID, ".cnf")
 	if err != nil {
 		return model.DBCapture{}, secrets, err
 	}
-	command, err := remoteMySQLCommand(remoteCNF, remoteSQL, conn.Name)
+	command, err := remoteMySQLStreamCommand(remoteCNF, conn.Name)
 	if err != nil {
+		return model.DBCapture{}, secrets, err
+	}
+	if err := os.MkdirAll(filepath.Dir(output), 0o755); err != nil {
 		return model.DBCapture{}, secrets, err
 	}
 	if err := os.MkdirAll(secretDir, 0o700); err != nil {
 		return model.DBCapture{}, secrets, err
 	}
-	timeout := dumpTimeout(spec, 10*time.Minute)
-	defer removeRemote(site.Location, remoteSQL, remoteCNF)
-	text, runErr := runSSH(site.Location, command, mysqlDefaults(conn, password), timeout)
-	if runErr != nil || !copiedDump(site.Location, remoteSQL, output, timeout) {
+	timeout := dumpTimeout(spec, 2*time.Hour)
+	defer removeRemote(site.Location, remoteCNF)
+	text, runErr := runSSHStdout(site.Location, command, mysqlDefaults(conn, password), output, timeout)
+	if runErr != nil || !nonEmpty(output) {
+		_ = os.Remove(output)
 		message := spec.FailMessage
 		if message == "" {
 			message = "mysqldump failed."
@@ -188,7 +189,26 @@ func remoteMySQLCommand(cnf, sql, name string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return "umask 077; cat > " + cnfQ + " && mysqldump --defaults-extra-file=" + cnfQ + " --single-transaction --skip-lock-tables --no-tablespaces --result-file=" + sqlQ + " " + nameQ + "; status=$?; rm -f " + cnfQ + "; exit $status", nil
+	return remoteMySQLPrefix(cnfQ) + "mysqldump --defaults-extra-file=" + cnfQ + " --single-transaction --skip-lock-tables --no-tablespaces --result-file=" + sqlQ + " " + nameQ + "; status=$?; rm -f " + cnfQ + "; exit $status", nil
+}
+
+// remoteMySQLStreamCommand writes the dump to stdout so SSH can stream it locally.
+func remoteMySQLStreamCommand(cnf, name string) (string, error) {
+	cnfQ, err := quoteShell(cnf)
+	if err != nil {
+		return "", err
+	}
+	nameQ, err := quoteShell(name)
+	if err != nil {
+		return "", err
+	}
+	return remoteMySQLPrefix(cnfQ) + "mysqldump --defaults-extra-file=" + cnfQ + " --single-transaction --skip-lock-tables --no-tablespaces " + nameQ + "; status=$?; rm -f " + cnfQ + "; exit $status", nil
+}
+
+// remoteMySQLPrefix writes the defaults file and removes it when the remote shell exits,
+// including when SSH dies and the shell receives SIGHUP.
+func remoteMySQLPrefix(cnfQ string) string {
+	return "umask 077; trap \"rm -f " + cnfQ + "\" EXIT; cat > " + cnfQ + " && "
 }
 
 func mysqlDefaults(conn addon.Connection, password string) string {
@@ -267,6 +287,36 @@ func runSSH(loc model.Location, remoteCmd, stdin string, timeout time.Duration) 
 	return string(out), err
 }
 
+// runSSHStdout streams remote stdout into a local file and returns scrubbed stderr.
+func runSSHStdout(loc model.Location, remoteCmd, stdin, output string, timeout time.Duration) (string, error) {
+	if _, err := exec.LookPath("ssh"); err != nil {
+		return "", fail.New("step_failed", "ssh is not installed.")
+	}
+	outFile, err := os.OpenFile(output, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o600)
+	if err != nil {
+		return "", err
+	}
+	defer outFile.Close()
+	args := append(sshBase(), loc.User+"@"+loc.Host, remoteCmd)
+	cmd := exec.Command("ssh", args...)
+	ApplySSHAgent(cmd)
+	if stdin != "" {
+		cmd.Stdin = strings.NewReader(stdin)
+	}
+	cmd.Stdout = outFile
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+	cmd.WaitDelay = 2 * time.Second
+	timer := time.AfterFunc(timeout, func() {
+		if cmd.Process != nil {
+			_ = cmd.Process.Kill()
+		}
+	})
+	defer timer.Stop()
+	runErr := cmd.Run()
+	return stderr.String(), runErr
+}
+
 func remoteFail(name string, spec addon.Dump, site model.Site, command []string, stderr string, secrets []string) error {
 	message := spec.FailMessage
 	if message == "" {
@@ -314,7 +364,7 @@ func remoteTemp(siteID, suffix string) (string, error) {
 	if _, err := rand.Read(buf); err != nil {
 		return "", err
 	}
-	return "/tmp/local-backup-" + siteID + "-" + hex.EncodeToString(buf) + suffix, nil
+	return "/tmp/backupbinder-" + siteID + "-" + hex.EncodeToString(buf) + suffix, nil
 }
 
 func validServer(site model.Site) error {

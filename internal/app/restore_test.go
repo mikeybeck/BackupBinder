@@ -3,9 +3,10 @@ package app
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
-	"local-backup/internal/model"
+	"backupbinder/internal/model"
 )
 
 func TestAssertScratchRefusesTheLiveTree(t *testing.T) {
@@ -19,9 +20,13 @@ func TestAssertScratchRefusesTheLiveTree(t *testing.T) {
 	parent := filepath.Dir(root)
 
 	refused := []string{root, parent, child, repo, filepath.Join(repo, "data")}
+	home := t.TempDir()
+	check := func(path string) error {
+		return assertScratch(root, repo, path, home, "site")
+	}
 	for _, path := range refused {
-		if err := assertScratch(root, repo, path); err == nil {
-			t.Fatalf("accepted %s", path)
+		if err := check(path); err == nil || !strings.Contains(err.Error(), "Omit --scratch") {
+			t.Fatalf("accepted %s: %v", path, err)
 		}
 	}
 	sibling := root + "-other"
@@ -29,7 +34,7 @@ func TestAssertScratchRefusesTheLiveTree(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { os.RemoveAll(sibling) })
-	if err := assertScratch(root, repo, sibling); err != nil {
+	if err := check(sibling); err != nil {
 		t.Fatal(err)
 	}
 
@@ -37,7 +42,7 @@ func TestAssertScratchRefusesTheLiveTree(t *testing.T) {
 	if err := os.WriteFile(file, []byte("x"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := assertScratch(root, repo, file); err == nil {
+	if err := check(file); err == nil {
 		t.Fatal("a file was accepted as scratch")
 	}
 	busy := filepath.Join(outside, "busy")
@@ -47,17 +52,17 @@ func TestAssertScratchRefusesTheLiveTree(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(busy, "x"), []byte("x"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := assertScratch(root, repo, busy); err == nil {
-		t.Fatal("a non-empty directory was accepted")
+	if err := check(busy); err == nil || !strings.Contains(err.Error(), "Omit --scratch") {
+		t.Fatal(err)
 	}
 	empty := filepath.Join(outside, "empty")
 	if err := os.Mkdir(empty, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := assertScratch(root, repo, empty); err != nil {
+	if err := check(empty); err != nil {
 		t.Fatal(err)
 	}
-	if err := assertScratch(root, repo, filepath.Join(outside, "missing")); err != nil {
+	if err := check(filepath.Join(outside, "missing")); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -94,11 +99,72 @@ func TestFilesMatchRejectsADifferentHash(t *testing.T) {
 	if err := os.WriteFile(path, []byte("hello"), 0o644); err != nil {
 		t.Fatal(err)
 	}
+	if err := os.WriteFile(filepath.Join(scratch, "manifest.json"), []byte("{}"), 0o644); err != nil {
+		t.Fatal(err)
+	}
 	manifest := model.Manifest{Captured: model.Captured{Files: model.FileCapture{Inventory: []model.FileRecord{{
 		Path: "note.txt", Bytes: 5, SHA256: "not-the-hash",
 	}}}}}
 	ok, count, err := filesMatch(scratch, manifest)
 	if err != nil || ok || count != 0 {
 		t.Fatalf("ok=%v count=%d err=%v", ok, count, err)
+	}
+}
+
+func TestFilesMatchRejectsAnExtraFile(t *testing.T) {
+	scratch := t.TempDir()
+	path := filepath.Join(scratch, "files", "note.txt")
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte("hello"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(scratch, "files", "extra.txt"), []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(scratch, "manifest.json"), []byte("{}"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	sum, err := fileSHA(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	manifest := model.Manifest{Captured: model.Captured{Files: model.FileCapture{Inventory: []model.FileRecord{{
+		Path: "note.txt", Bytes: 5, SHA256: sum,
+	}}}}}
+	ok, _, err := filesMatch(scratch, manifest)
+	if err != nil || ok {
+		t.Fatalf("ok=%v err=%v", ok, err)
+	}
+	if err := os.Remove(filepath.Join(scratch, "files", "extra.txt")); err != nil {
+		t.Fatal(err)
+	}
+	ok, count, err := filesMatch(scratch, manifest)
+	if err != nil || !ok || count != 1 {
+		t.Fatalf("ok=%v count=%d err=%v", ok, count, err)
+	}
+}
+
+func TestHashLiveIgnoresAFileAlreadyGone(t *testing.T) {
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "keep.txt"), []byte("a"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	inventory := []model.FileRecord{{Path: "keep.txt"}, {Path: "gone.txt"}}
+	before, err := hashLive(root, inventory)
+	if err != nil {
+		t.Fatal(err)
+	}
+	after, err := hashLive(root, inventory)
+	if err != nil || !sameHashes(before, after) {
+		t.Fatalf("stable missing file: %v %#v %#v", err, before, after)
+	}
+	if err := os.Remove(filepath.Join(root, "keep.txt")); err != nil {
+		t.Fatal(err)
+	}
+	changed, err := hashLive(root, inventory)
+	if err != nil || sameHashes(before, changed) {
+		t.Fatalf("a file removed during the check was ignored: %v", err)
 	}
 }

@@ -12,10 +12,10 @@ import (
 	"strings"
 	"time"
 
-	"local-backup/internal/app"
-	"local-backup/internal/destination"
-	"local-backup/internal/fail"
-	"local-backup/internal/model"
+	"backupbinder/internal/app"
+	"backupbinder/internal/destination"
+	"backupbinder/internal/fail"
+	"backupbinder/internal/model"
 )
 
 // Handler serves the local UI. Bind it to 127.0.0.1.
@@ -32,12 +32,16 @@ func Handler(application *app.App) http.Handler {
 	mux.HandleFunc("GET /sites/{id}/setup/{step}", ui.setupShow)
 	mux.HandleFunc("POST /sites/{id}/setup/{step}", ui.setupSave)
 	mux.HandleFunc("GET /sites/{id}", ui.site)
+	mux.HandleFunc("POST /sites/{id}/name", ui.rename)
+	mux.HandleFunc("POST /sites/{id}/remove", ui.removeSite)
 	mux.HandleFunc("GET /sites/{id}/progress", ui.progressJSON)
 	mux.HandleFunc("POST /sites/{id}/backup", ui.backup)
 	mux.HandleFunc("POST /sites/{id}/destinations", ui.destination)
+	mux.HandleFunc("POST /sites/{id}/destinations/{dest}", ui.destinationUpdate)
 	mux.HandleFunc("POST /sites/{id}/destinations/{dest}/enabled", ui.destinationEnabled)
 	mux.HandleFunc("POST /sites/{id}/destinations/{dest}/remove", ui.destinationRemove)
 	mux.HandleFunc("POST /sites/{id}/test-restore", ui.testRestore)
+	mux.HandleFunc("GET /sites/{id}/restore-status", ui.restoreStatus)
 	mux.HandleFunc("POST /sites/{id}/schedule", ui.schedule)
 	mux.HandleFunc("POST /sites/{id}/limits", ui.limits)
 	mux.HandleFunc("POST /sites/{id}/retention", ui.retention)
@@ -160,6 +164,7 @@ type destFieldView struct {
 	Name        string
 	Label       string
 	Placeholder string
+	Current     string
 	Required    bool
 	Choices     []string
 }
@@ -212,6 +217,10 @@ type siteView struct {
 	Backups         []backupRow
 	Cron            string
 	CronOn          bool
+	ScheduleLine    string
+	RestoreRunning  bool
+	RestoreScratch  string
+	RestoreError    string
 	UploadKiB       string
 	DownloadKiB     string
 	KeepLast        string
@@ -252,13 +261,17 @@ type progressView struct {
 }
 
 type destView struct {
-	ID        string
-	Kind      string
-	Enabled   bool
-	Status    string
-	Detail    string
-	Reason    string
-	Removable bool
+	ID             string
+	Kind           string
+	Enabled        bool
+	Status         string
+	Detail         string
+	Reason         string
+	Removable      bool
+	Fields         []destFieldView
+	HasCredentials bool
+	AccessLabel    string
+	SecretLabel    string
 }
 
 type wizardView struct {
@@ -280,6 +293,7 @@ type wizardView struct {
 	DBPasswordLabel string
 	Cron            string
 	CronOn          bool
+	ScheduleLine    string
 	Back            string
 	Config          string
 	Edit            string
@@ -422,7 +436,8 @@ func (s *server) siteView(w http.ResponseWriter, r *http.Request) (*siteView, bo
 		ID: inspected.Site.ID, Name: inspected.Site.Name, Adapter: inspected.Site.Adapter,
 		Root: inspected.Site.Root, Status: "none", Confidence: "never",
 		Cron: inspected.Site.Schedule.Cron, CronOn: inspected.Site.Schedule.Enabled,
-		UploadKiB: formatKiB(inspected.Site.Limits.UploadKiB), DownloadKiB: formatKiB(inspected.Site.Limits.DownloadKiB),
+		ScheduleLine: inspected.ScheduleInvocation,
+		UploadKiB:    formatKiB(inspected.Site.Limits.UploadKiB), DownloadKiB: formatKiB(inspected.Site.Limits.DownloadKiB),
 		KeepLast: formatCount(inspected.Site.Retention.KeepLast), KeepHourly: formatCount(inspected.Site.Retention.KeepHourly),
 		KeepDaily: formatCount(inspected.Site.Retention.KeepDaily), KeepWeekly: formatCount(inspected.Site.Retention.KeepWeekly),
 		KeepMonthly: formatCount(inspected.Site.Retention.KeepMonthly), KeepYearly: formatCount(inspected.Site.Retention.KeepYearly),
@@ -510,10 +525,27 @@ func (s *server) siteView(w http.ResponseWriter, r *http.Request) (*siteView, bo
 			view.DestWarning = strings.Join(run.Manifest.Warnings, " ")
 		}
 	}
+	kinds := destKindViews()
 	for _, dest := range inspected.Site.Destinations {
 		detail := dest.Kind
+		item := destView{
+			ID: dest.ID, Kind: dest.Kind, Enabled: dest.Enabled, Status: statusByID[dest.ID],
+			Reason: reasonByID[dest.ID], Removable: dest.Kind != "local_restic",
+		}
 		if kind, err := destination.ByID(dest.Kind); err == nil {
 			detail = kind.DetailLabel(dest)
+			for _, viewKind := range kinds {
+				if viewKind.ID != dest.Kind {
+					continue
+				}
+				for _, field := range viewKind.Fields {
+					field.Current = savedField(dest, field.Name)
+					item.Fields = append(item.Fields, field)
+				}
+				item.HasCredentials = viewKind.HasCredentials
+				item.AccessLabel = viewKind.AccessLabel
+				item.SecretLabel = viewKind.SecretLabel
+			}
 		} else if dest.Host != "" {
 			detail = dest.User + "@" + dest.Host + dest.Path
 		} else if dest.Bucket != "" {
@@ -524,12 +556,34 @@ func (s *server) siteView(w http.ResponseWriter, r *http.Request) (*siteView, bo
 		if dest.Credentials != "" {
 			detail += " (credentials " + dest.Credentials + ")"
 		}
-		view.Destinations = append(view.Destinations, destView{
-			ID: dest.ID, Kind: dest.Kind, Enabled: dest.Enabled, Status: statusByID[dest.ID],
-			Detail: detail, Reason: reasonByID[dest.ID], Removable: dest.Kind != "local_restic",
-		})
+		item.Detail = detail
+		view.Destinations = append(view.Destinations, item)
+	}
+	if status, ok := s.app.ReadRestoreStatus(id); ok {
+		view.RestoreRunning = status.InProgress
+		view.RestoreScratch = status.Scratch
+		view.RestoreError = status.Error
 	}
 	return view, true
+}
+
+func savedField(dest model.Destination, name string) string {
+	switch name {
+	case "host":
+		return dest.Host
+	case "user":
+		return dest.User
+	case "path":
+		return dest.Path
+	case "bucket":
+		return dest.Bucket
+	case "prefix":
+		return dest.Prefix
+	case "endpoint":
+		return dest.Endpoint
+	default:
+		return ""
+	}
 }
 
 func (s *server) progressView(siteID, runID string) progressView {
@@ -615,7 +669,7 @@ func formatBytes(n int64) string {
 
 func (s *server) backup(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
-	if err := s.app.StartBackupDetached(id); err != nil {
+	if _, err := s.app.StartBackupDetached(id); err != nil {
 		s.redirectNotice(w, r, "/sites/"+id, "Backup failed. "+noticeText(err), true)
 		return
 	}
@@ -731,11 +785,25 @@ func removedPhrase(n int) string {
 
 func (s *server) testRestore(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
-	if _, err := s.app.TestRestore(id, "", ""); err != nil {
+	if err := s.app.StartRestoreDetached(id, "test_restore", "", ""); err != nil {
 		s.redirectNotice(w, r, "/sites/"+id, "Restore check failed. "+noticeText(err), true)
 		return
 	}
-	s.redirectNotice(w, r, "/sites/"+id, "Restore check passed. The scratch copy matched this backup.", false)
+	s.redirectNotice(w, r, "/sites/"+id, "Restore check started. The scratch folder appears here when it finishes.", false)
+}
+
+func (s *server) restoreStatus(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	if _, err := s.app.DB.GetSite(id); err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	status, ok := s.app.ReadRestoreStatus(id)
+	if !ok {
+		status = app.RestoreStatus{}
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(status)
 }
 
 func (s *server) destination(w http.ResponseWriter, r *http.Request) {
@@ -760,7 +828,7 @@ func (s *server) destination(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		s.render(w, "site", page{
-			Title: view.Name, Site: view, FormErr: "Destination was not saved. "+noticeText(err),
+			Title: view.Name, Site: view, FormErr: "Destination was not saved. " + noticeText(err),
 			Tools: s.app.Restic.Binary, DestKinds: destKindViews(), DestDraft: destDraftFrom(r), Focus: "destinations",
 		})
 		return
@@ -770,6 +838,81 @@ func (s *server) destination(w http.ResponseWriter, r *http.Request) {
 		notice = "Destination saved and checked. It will receive a copy on the next backup."
 	}
 	s.redirectNotice(w, r, "/sites/"+id+"#destinations", notice, false)
+}
+
+func (s *server) destinationUpdate(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	destID := r.PathValue("dest")
+	if err := r.ParseForm(); err != nil {
+		s.fail(w, err)
+		return
+	}
+	site, err := s.app.DB.GetSite(id)
+	if err != nil {
+		s.redirectNotice(w, r, "/sites/"+id+"#destinations", "Destination was not saved. "+noticeText(err), true)
+		return
+	}
+	var current model.Destination
+	found := false
+	for _, dest := range site.Destinations {
+		if dest.ID == destID {
+			current = dest
+			found = true
+			break
+		}
+	}
+	if !found {
+		s.redirectNotice(w, r, "/sites/"+id+"#destinations", "Destination was not saved. Destination "+destID+" was not found on this site.", true)
+		return
+	}
+	kind, err := destination.ByID(current.Kind)
+	if err != nil {
+		s.redirectNotice(w, r, "/sites/"+id+"#destinations", "Destination was not saved. "+noticeText(err), true)
+		return
+	}
+	enabled := r.FormValue("enabled") == "on"
+	patch := app.DestinationPatch{Enabled: &enabled}
+	for _, field := range kind.Fields {
+		patch.SetField(field.Name, strings.TrimSpace(r.FormValue(field.Name)))
+	}
+	if r.FormValue("access_key") != "" || r.FormValue("secret_key") != "" {
+		patch.KeysSet = true
+		patch.AccessKey = r.FormValue("access_key")
+		patch.SecretKey = r.FormValue("secret_key")
+	}
+	if _, err := s.app.SetDestination(id, destID, patch); err != nil {
+		s.redirectNotice(w, r, "/sites/"+id+"#destinations", "Destination was not saved. "+noticeText(err), true)
+		return
+	}
+	s.redirectNotice(w, r, "/sites/"+id+"#destinations", "Destination "+destID+" saved.", false)
+}
+
+func (s *server) rename(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	if err := r.ParseForm(); err != nil {
+		s.fail(w, err)
+		return
+	}
+	saved, unchanged, err := s.app.SetName(id, r.FormValue("name"))
+	if err != nil {
+		s.redirectNotice(w, r, "/sites/"+id, "Name was not saved. "+noticeText(err), true)
+		return
+	}
+	if unchanged {
+		s.redirectNotice(w, r, "/sites/"+id, "Name is already "+saved.Name+".", false)
+		return
+	}
+	s.redirectNotice(w, r, "/sites/"+id, "Name saved. The id stays "+saved.ID+".", false)
+}
+
+func (s *server) removeSite(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	repo, err := s.app.RemoveSite(id)
+	if err != nil {
+		s.redirectNotice(w, r, "/sites/"+id, "Site was not removed. "+noticeText(err), true)
+		return
+	}
+	s.redirectNotice(w, r, "/", "Site removed. The local restic repository was left at "+repo+".", false)
 }
 
 func (s *server) destinationEnabled(w http.ResponseWriter, r *http.Request) {
@@ -786,7 +929,7 @@ func (s *server) destinationEnabled(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		s.render(w, "site", page{
-			Title: view.Name, Site: view, FormErr: "Destination was not updated. "+noticeText(err),
+			Title: view.Name, Site: view, FormErr: "Destination was not updated. " + noticeText(err),
 			Tools: s.app.Restic.Binary, DestKinds: destKindViews(), Focus: "destinations",
 		})
 		return
@@ -814,11 +957,12 @@ func (s *server) schedule(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, err)
 		return
 	}
-	if _, err := s.app.SetSchedule(id, strings.TrimSpace(r.FormValue("cron")), r.FormValue("enabled") == "on"); err != nil {
+	enabled := r.FormValue("enabled") == "on"
+	if _, err := s.app.SetSchedule(id, strings.TrimSpace(r.FormValue("cron")), &enabled); err != nil {
 		s.redirectNotice(w, r, "/sites/"+id, "Schedule was not saved. "+noticeText(err), true)
 		return
 	}
-	s.redirectNotice(w, r, "/sites/"+id, "Schedule saved.", false)
+	s.redirectNotice(w, r, "/sites/"+id, "Schedule saved. It is not installed. Add this cron line: "+s.app.ScheduleLine(), false)
 }
 
 func (s *server) adapter(w http.ResponseWriter, r *http.Request) {
@@ -847,8 +991,9 @@ func (s *server) database(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, err)
 		return
 	}
+	enabled := r.FormValue("enabled") == "on"
 	saved, err := s.app.SetDatabase(id, app.DatabaseInput{
-		Enabled:      r.FormValue("enabled") == "on",
+		Enabled:      &enabled,
 		Name:         strings.TrimSpace(r.FormValue("name")),
 		User:         strings.TrimSpace(r.FormValue("user")),
 		Host:         strings.TrimSpace(r.FormValue("host")),
@@ -1213,7 +1358,7 @@ func (s *server) wizard(site model.Site, step string) *wizardView {
 			view.DBNote += " Password: " + view.DBPasswordLabel + "."
 		}
 	} else if site.Location.Kind == "sftp" {
-		view.DBNote = "The site type is read after the first copy. Fill these fields to include a dump now, or leave the box unchecked for files only."
+		view.DBNote = "No database was detected yet. Fill these fields to include a dump now, or leave the box unchecked for files only. The first backup reads the server copy."
 	} else {
 		view.DBNote = "No database was detected. Check the box and fill the fields to include a dump, or leave it unchecked for files only."
 	}
@@ -1222,6 +1367,7 @@ func (s *server) wizard(site model.Site, step string) *wizardView {
 		view.Cron = "15 3 * * *"
 	}
 	view.CronOn = site.Schedule.Enabled
+	view.ScheduleLine = s.app.ScheduleLine()
 	return view
 }
 
@@ -1480,13 +1626,13 @@ pre { white-space: pre-wrap; overflow-wrap: anywhere; background: #ebe6dc; paddi
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 {{if .Refresh}}<meta http-equiv="refresh" content="2">{{end}}
-<title>{{if eq .Nav "setup"}}Set up a backup{{else if .Site}}{{.Site.Name}}{{else}}Local backup{{end}}</title>
+<title>{{if eq .Nav "setup"}}Set up a backup{{else if .Site}}{{.Site.Name}}{{else}}BackupBinder{{end}}</title>
 <style>{{template "styles" .}}</style>
 </head>
 <body>
 <div class="shell">
-<aside class="rail" aria-label="Local backup">
-  <div class="brand">Local backup<small>on this machine</small></div>
+<aside class="rail" aria-label="BackupBinder">
+  <div class="brand">BackupBinder<small>on this machine</small></div>
   <div class="nav-tabs">
     <a class="tab{{if eq .Nav "setup"}} active{{end}}" href="/setup"{{if eq .Nav "setup"}} aria-current="page"{{end}}>Setup</a>
     <a class="tab{{if eq .Nav "sites"}} active{{end}}" href="/"{{if eq .Nav "sites"}} aria-current="page"{{end}}>Sites</a>
@@ -1579,6 +1725,12 @@ pre { white-space: pre-wrap; overflow-wrap: anywhere; background: #ebe6dc; paddi
 <p class="muted">{{.Site.Adapter}} · {{.Site.Root}}</p>
 {{end}}
 {{if .Site.Config}}<p class="muted">Config file: {{.Site.Config}}</p>{{end}}
+<form method="post" action="/sites/{{.Site.ID}}/name">
+  <label for="site_name">Name</label>
+  <input id="site_name" name="name" value="{{.Site.Name}}" required>
+  <p class="muted">The name is a label. The id stays {{.Site.ID}}.</p>
+  <button class="secondary" type="submit" data-pending="Saving name…">Save name</button>
+</form>
 {{if and .FormErr (ne .Focus "destinations")}}<p class="notice bad" role="status">{{.FormErr}}</p>{{end}}
 {{if .Notice}}<p class="notice{{if .NoticeBad}} bad{{end}}" role="status">{{.Notice}}</p>{{end}}
 <section class="card">
@@ -1618,7 +1770,7 @@ pre { white-space: pre-wrap; overflow-wrap: anywhere; background: #ebe6dc; paddi
     <p>{{.Site.When}}</p>
     <p>{{.Site.Size}}</p>
     <p>{{.Site.Database}}</p>
-    <p>Restore confidence: {{.Site.Confidence}}</p>
+    <p>Restore confidence: {{.Site.Confidence}}{{if eq .Site.Confidence "never"}}. Check restore proves a scratch copy matches this backup. It has not been run.{{end}}</p>
     {{if .Site.DestWarning}}<p class="bad">{{.Site.DestWarning}}</p>{{end}}
   {{else if eq .Site.Status "failed"}}
     <p class="bad">Last backup failed</p>
@@ -1644,9 +1796,12 @@ pre { white-space: pre-wrap; overflow-wrap: anywhere; background: #ebe6dc; paddi
     <button type="submit" data-pending="Starting backup…" {{if or .Watch (eq .Site.Status "running")}}disabled{{end}} data-progress-button>{{if or .Watch (eq .Site.Status "running")}}Backup in progress…{{else}}Back up now{{end}}</button>
   </form>
   {{if .Site.CanCheckRestore}}
+  <div id="restore-check"{{if .Site.RestoreRunning}} data-restore-url="/sites/{{.Site.ID}}/restore-status"{{end}}>
+  <p data-restore-status class="muted">{{if .Site.RestoreRunning}}Restore check in progress.{{else if .Site.RestoreError}}{{.Site.RestoreError}}{{else if .Site.RestoreScratch}}Scratch copy: {{.Site.RestoreScratch}}{{end}}</p>
   <form method="post" action="/sites/{{.Site.ID}}/test-restore">
-    <button class="secondary" type="submit" data-pending="Checking restore…" {{if eq .Site.Status "running"}}disabled{{end}}>Check restore</button>
+    <button class="secondary" type="submit" data-pending="Starting restore check…" {{if or (eq .Site.Status "running") .Site.RestoreRunning}}disabled{{end}}>Check restore</button>
   </form>
+  </div>
   <p class="muted">Uses the last successful backup. Does not run a new backup. Restores into an empty scratch folder, checks every file against the manifest hashes, checks the database dump when one was captured, and confirms the live site was not modified.</p>
   {{else}}
   <p class="muted">After the first successful backup, Check restore can verify that archive without backing up again.</p>
@@ -1697,22 +1852,44 @@ pre { white-space: pre-wrap; overflow-wrap: anywhere; background: #ebe6dc; paddi
   {{if and .FormErr (eq .Focus "destinations")}}<p class="notice bad" role="status">{{.FormErr}}</p>{{end}}
   {{if .Site.Destinations}}
     <ul class="dest-list">
-    {{range .Site.Destinations}}
+    {{range $dest := .Site.Destinations}}
       <li>
-        <div>{{.Kind}} {{.ID}}{{if .Enabled}} · enabled{{else}} · saved{{end}}{{if .Status}} · last run {{.Status}}{{end}}<br><span class="muted">{{.Detail}}</span>{{if .Reason}}<br><span class="bad">{{.Reason}}</span>{{end}}</div>
-        {{if .Removable}}
+        <div>{{$dest.Kind}} {{$dest.ID}}{{if $dest.Enabled}} · enabled{{else}} · saved, not uploaded{{end}}{{if $dest.Status}} · last run {{$dest.Status}}{{end}}<br><span class="muted">{{$dest.Detail}}</span>{{if not $dest.Enabled}}<br><span class="bad">Not uploaded until you enable it.</span>{{end}}{{if $dest.Reason}}<br><span class="bad">{{$dest.Reason}}</span>{{end}}</div>
+        {{if $dest.Removable}}
+        <form method="post" action="/sites/{{$.Site.ID}}/destinations/{{$dest.ID}}">
+          {{range $dest.Fields}}
+          <label for="edit-{{$dest.ID}}-{{.Name}}">{{.Label}}</label>
+          {{if .Choices}}
+          <select id="edit-{{$dest.ID}}-{{.Name}}" name="{{.Name}}"{{if .Required}} required{{end}}>
+            <option value="">Choose…</option>
+            {{$val := .Current}}
+            {{range .Options $val}}<option value="{{.}}"{{if eq $val .}} selected{{end}}>{{.}}</option>{{end}}
+          </select>
+          {{else}}
+          <input id="edit-{{$dest.ID}}-{{.Name}}" name="{{.Name}}" value="{{.Current}}"{{if .Required}} required{{end}}>
+          {{end}}
+          {{end}}
+          {{if $dest.HasCredentials}}
+          <label for="edit-{{$dest.ID}}-access">{{$dest.AccessLabel}}</label>
+          <input id="edit-{{$dest.ID}}-access" name="access_key" autocomplete="off" placeholder="Leave blank to keep the current key">
+          <label for="edit-{{$dest.ID}}-secret">{{$dest.SecretLabel}}</label>
+          <input id="edit-{{$dest.ID}}-secret" name="secret_key" type="password" autocomplete="off" placeholder="Leave blank to keep the current key">
+          {{end}}
+          <label class="check"><input type="checkbox" name="enabled"{{if $dest.Enabled}} checked{{end}}> Enable this destination</label>
+          <button class="secondary" type="submit" data-pending="Saving destination…">Save destination</button>
+        </form>
         <div class="dest-actions">
-          {{if .Enabled}}
-          <form method="post" action="/sites/{{$.Site.ID}}/destinations/{{.ID}}/enabled">
+          {{if $dest.Enabled}}
+          <form method="post" action="/sites/{{$.Site.ID}}/destinations/{{$dest.ID}}/enabled">
             <button class="secondary" type="submit" data-pending="Disabling…">Disable</button>
           </form>
           {{else}}
-          <form method="post" action="/sites/{{$.Site.ID}}/destinations/{{.ID}}/enabled">
+          <form method="post" action="/sites/{{$.Site.ID}}/destinations/{{$dest.ID}}/enabled">
             <input type="hidden" name="enabled" value="on">
             <button class="secondary" type="submit" data-pending="Enabling…">Enable</button>
           </form>
           {{end}}
-          <form method="post" action="/sites/{{$.Site.ID}}/destinations/{{.ID}}/remove">
+          <form method="post" action="/sites/{{$.Site.ID}}/destinations/{{$dest.ID}}/remove">
             <button class="secondary" type="submit" data-pending="Removing…">Remove</button>
           </form>
         </div>
@@ -1754,12 +1931,14 @@ pre { white-space: pre-wrap; overflow-wrap: anywhere; background: #ebe6dc; paddi
     </div>
     {{end}}
     <label class="check"><input type="checkbox" name="enabled"{{if and .DestDraft .DestDraft.Enabled}} checked{{end}}> Enable this destination</label>
+    <p class="muted">Leave this unchecked and the copy is saved but not used.</p>
     <button type="submit" data-pending="Saving destination…">Save destination</button>
   </form>
 </section>
 <section class="card">
   <h2>Schedule</h2>
-  <p class="muted">Saving a schedule does not start a timer. A system cron must run <code>run_scheduled</code> every minute. That command runs the same backup path, with no agent in the loop.</p>
+  <p class="muted">Saving a schedule does not start a timer. A system cron must run <code>run_scheduled</code> every minute. That command runs the same backup path, with no agent in the loop. This line is not installed:</p>
+  <p><code>{{.Site.ScheduleLine}}</code></p>
   <form method="post" action="/sites/{{.Site.ID}}/schedule">
     <label for="cron">Cron (minute hour day month weekday)</label>
     <input id="cron" name="cron" value="{{.Site.Cron}}" placeholder="15 3 * * *">
@@ -1898,8 +2077,43 @@ pre { white-space: pre-wrap; overflow-wrap: anywhere; background: #ebe6dc; paddi
     }
     tick();
   }
+  var restoreRoot = document.getElementById("restore-check");
+  var restoreURL = restoreRoot && restoreRoot.getAttribute("data-restore-url");
+  if (restoreURL) {
+    function restoreTick() {
+      fetch(restoreURL, { headers: { "Accept": "application/json" }, cache: "no-store" })
+        .then(function (res) { return res.json(); })
+        .then(function (data) {
+          var line = restoreRoot.querySelector("[data-restore-status]");
+          if (!line) return;
+          if (data.in_progress) {
+            line.textContent = "Restore check in progress.";
+            window.setTimeout(restoreTick, 1000);
+            return;
+          }
+          if (data.error) {
+            line.textContent = data.error;
+            return;
+          }
+          if (data.scratch) {
+            line.textContent = "Restore check passed. Scratch copy: " + data.scratch;
+            return;
+          }
+          line.textContent = "Restore check finished.";
+        })
+        .catch(function () { window.setTimeout(restoreTick, 2000); });
+    }
+    restoreTick();
+  }
 })();
 </script>
+<section class="card">
+  <h2>Remove this site</h2>
+  <p class="muted">This drops the site from the registry. The local restic repository stays at <code>{{.Site.LocalRepo}}</code>.</p>
+  <form method="post" action="/sites/{{.Site.ID}}/remove">
+    <button class="secondary" type="submit" data-pending="Removing site…">Remove this site</button>
+  </form>
+</section>
 {{if .Site.Steps}}
 <section class="card">
   <h2>Restore procedure</h2>
@@ -2003,12 +2217,14 @@ pre { white-space: pre-wrap; overflow-wrap: anywhere; background: #ebe6dc; paddi
   </div>
   {{end}}
   <label class="check"><input type="checkbox" name="enabled"{{if and $.DestDraft $.DestDraft.Enabled}} checked{{end}}> Enable this destination</label>
+  <p class="muted">Leave this unchecked and the copy is saved but not used.</p>
   <button type="submit" data-pending="Saving destination…">Continue</button>
 </form>
 {{else if eq .Step "schedule"}}
 <form class="card" method="post" action="/sites/{{.ID}}/setup/schedule">
   <h2>Schedule</h2>
-  <p class="muted">Saving a schedule does not start a timer. A system cron must run <code>run_scheduled</code> every minute. Leave the box unchecked to keep the schedule off.</p>
+  <p class="muted">Saving a schedule does not start a timer. A system cron must run <code>run_scheduled</code> every minute. Leave the box unchecked to keep the schedule off. This line is not installed:</p>
+  <p><code>{{.ScheduleLine}}</code></p>
   <label for="cron">Cron (minute hour day month weekday)</label>
   <input id="cron" name="cron" value="{{.Cron}}">
   <label class="check"><input type="checkbox" name="enabled" {{if .CronOn}}checked{{end}}> Enabled</label>

@@ -10,8 +10,8 @@ import (
 	"path/filepath"
 	"time"
 
-	"local-backup/internal/fail"
-	"local-backup/internal/model"
+	"backupbinder/internal/fail"
+	"backupbinder/internal/model"
 
 	_ "modernc.org/sqlite"
 )
@@ -227,6 +227,33 @@ func (s *Store) UpdateDestination(siteID string, dest model.Destination) error {
 	}
 	if _, err := tx.Exec(`UPDATE sites SET updated_at = ? WHERE id = ?`, time.Now().UTC().Format(time.RFC3339), siteID); err != nil {
 		return err
+	}
+	return tx.Commit()
+}
+
+// DeleteSite removes the registry row, its destinations, and its runs.
+func (s *Store) DeleteSite(siteID string) error {
+	tx, err := s.DB.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if _, err := tx.Exec(`DELETE FROM runs WHERE site_id = ?`, siteID); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(`DELETE FROM destinations WHERE site_id = ?`, siteID); err != nil {
+		return err
+	}
+	res, err := tx.Exec(`DELETE FROM sites WHERE id = ?`, siteID)
+	if err != nil {
+		return err
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if n == 0 {
+		return fail.New("not_found", "Site "+siteID+" is not registered.")
 	}
 	return tx.Commit()
 }

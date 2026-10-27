@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>Schedules — BackupBinder</title>
+  <meta name="description" content="Schedule BackupBinder with system cron, choose how many snapshots to keep, and cap repository speed."/>
+  <link rel="preconnect" href="https://fonts.googleapis.com"/>
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+  <link href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;650;700;800&family=Source+Sans+3:ital,wght@0,400;0,600;0,700;1,400&display=swap" rel="stylesheet"/>
+  <link rel="stylesheet" href="../styles.css"/>
+</head>
+<body>
+  <a class="skip" href="#main">Skip to content</a>
+
+  <div class="cabinet">
+    <header class="drawer-chrome">
+      <div class="handle" aria-hidden="true"></div>
+      <nav class="hanging-tabs" aria-label="Primary">
+        <a class="tab tab--brand" href="../index.html">BackupBinder</a>
+        <a class="tab" href="index.html" aria-current="page">Docs</a>
+      </nav>
+    </header>
+
+    <main id="main">
+      <section class="folder folder--doc" aria-labelledby="doc-title">
+        <div class="folder__spine" aria-hidden="true"></div>
+        <div class="folder__tab-label" aria-hidden="true">Schedules</div>
+        <div class="folder__face">
+          <h1 id="doc-title">Run it from cron.</h1>
+          <p class="lede">A schedule is five cron fields saved on the site. BackupBinder stores the fields. Your system's cron is what actually starts the run.</p>
+          <nav class="doc-index" aria-label="Handbook">
+            <a href="index.html">Handbook</a>
+            <a href="install.html">Install</a>
+            <a href="first-backup.html">First backup</a>
+            <a href="restore.html">Restore</a>
+            <a href="schedules.html" aria-current="page">Schedules</a>
+            <a href="destinations.html">Destinations</a>
+            <a href="agents.html">Agents</a>
+          </nav>
+          <div class="doc-prose">
+            <h2>Turn the schedule on</h2>
+            <p>The change needs the site's id and its exact root. The default expression is <code>15 3 * * *</code>, which is 03:15 every day. <code>--no-schedule</code> during setup leaves the schedule off.</p>
+            <pre class="sheet" tabindex="0"><code>./bin/backupbinder set_schedule --id SITE --root /path/to/site --cron "15 3 * * *" --enabled</code></pre>
+            <p>Saving the fields does not start a backup by itself. Something on this machine has to call the program.</p>
+
+            <h2>The cron line</h2>
+            <p>Point system cron at the binary once a minute. <code>run_scheduled</code> looks at each site and backs up the ones that are due. It calls the same path as <code>create_backup</code>. Nothing in that path stops to ask a question.</p>
+            <pre class="sheet" tabindex="0"><code>* * * * * /path/to/backupbinder --home /path/to/var run_scheduled</code></pre>
+            <p><code>doctor</code> prints this line with your binary path and data directory filled in. It still does not install the line. <code>inspect_site</code> shows the cron fields saved on one site.</p>
+
+            <h2>How many snapshots to keep</h2>
+            <p>Each successful run is a restic snapshot. Unchanged file data is stored once. A new site keeps the newest 3 snapshots, 24 hourly, 14 daily, 8 weekly, 12 monthly, and 2 yearly. A snapshot stays if any of those rules keeps it.</p>
+            <p>After every backup, snapshots outside the rules are forgotten and the freed space is pruned, in the local repository and on each destination that just received a copy. <code>apply_retention</code> does the same pass for every enabled destination.</p>
+            <pre class="sheet" tabindex="0"><code>./bin/backupbinder set_retention --id SITE --root /path/to/site --keep-daily 14 --keep-weekly 8
+./bin/backupbinder apply_retention --id SITE --root /path/to/site</code></pre>
+            <p><code>0</code> skips that one rule. Set every count to <code>0</code> and every snapshot is kept. Leave a flag off and that count stays as it is. The flags are <code>--keep-last</code>, <code>--keep-hourly</code>, <code>--keep-daily</code>, <code>--keep-weekly</code>, <code>--keep-monthly</code>, and <code>--keep-yearly</code>.</p>
+            <p>Saving the rules applies them immediately when a repository already exists. If there is no repository yet, they apply on the next backup. The same form is on the site page.</p>
+
+            <h2>Slow the copy down</h2>
+            <p>A site can cap restic repository traffic. The numbers are KiB per second, matching restic <code>--limit-upload</code> and <code>--limit-download</code>. <code>0</code> or a blank field means that direction stays unlimited.</p>
+            <pre class="sheet" tabindex="0"><code>./bin/backupbinder set_limits --id SITE --root /path/to/site --limit-upload 1024 --limit-download 1024</code></pre>
+            <p>The cap applies to backup, copies to other destinations, checks, and restores, including a scheduled run. The same fields are on the site page.</p>
+          </div>
+          <nav class="doc-pager" aria-label="Adjacent pages">
+            <a href="restore.html"><span>Previous</span> Restore</a>
+            <a class="next" href="destinations.html"><span>Next</span> Destinations</a>
+          </nav>
+        </div>
+      </section>
+    </main>
+
+    <footer class="drawer-foot">
+      <p><strong>BackupBinder</strong> · Site backups on this machine</p>
+      <p class="muted">Open source. No cloud account required for a complete local backup.</p>
+    </footer>
+  </div>
+</body>
+</html>

@@ -2,6 +2,8 @@
 package sqlcheck
 
 import (
+	"bufio"
+	"io"
 	"regexp"
 	"strings"
 	"unicode"
@@ -130,77 +132,312 @@ func collapse(s string) string {
 // Assess imports the dump into an in-memory set of tables.
 func Assess(text string) Result {
 	if strings.Contains(text, "\x00") {
-		return Result{Mode: "in_memory", Reason: "dump contains NUL bytes", Tables: []string{}}
+		return nulDump("in_memory")
 	}
 	text = strings.TrimPrefix(text, "\uFEFF")
-	statements := Split(text)
-	tables := map[string]struct{}{}
-	var problems []string
-	inserts, creates := 0, 0
-	allowed := []string{
-		"CREATE DATABASE", "DROP DATABASE", "LOCK TABLES", "UNLOCK TABLES",
-		"SET ", "START TRANSACTION", "COMMIT", "ROLLBACK", "USE ",
-		"ALTER TABLE", "CREATE INDEX", "CREATE UNIQUE INDEX",
-		"CREATE VIEW", "DROP VIEW", "CREATE ALGORITHM",
+	a := newAssessor()
+	for _, statement := range Split(text) {
+		a.statement(statement)
 	}
-	for _, statement := range statements {
-		head := collapse(statement)
-		upper := strings.ToUpper(head)
-		switch {
-		case strings.HasPrefix(upper, "CREATE TABLE"):
-			name := first(createTableRe, head)
-			if name == "" {
-				problems = append(problems, "CREATE TABLE without a table name")
-			} else {
-				tables[name] = struct{}{}
-				creates++
+	return a.finish("in_memory")
+}
+
+// AssessReader applies Assess without holding the dump in memory.
+// Only the start of each statement is kept; quote state still covers the rest,
+// so a semicolon inside a long string does not end the statement.
+func AssessReader(r io.Reader) Result {
+	in := bufio.NewReader(r)
+	if bom, err := in.Peek(3); err == nil && bom[0] == 0xEF && bom[1] == 0xBB && bom[2] == 0xBF {
+		_, _ = in.Discard(3)
+	}
+	var push []byte
+	var readErr error
+	read := func() (byte, bool) {
+		if readErr != nil {
+			return 0, false
+		}
+		if len(push) > 0 {
+			b := push[0]
+			push = push[1:]
+			return b, true
+		}
+		b, err := in.ReadByte()
+		if err == io.EOF {
+			return 0, false
+		}
+		if err != nil {
+			readErr = err
+			return 0, false
+		}
+		return b, true
+	}
+	unread := func(b byte) {
+		push = append([]byte{b}, push...)
+	}
+	a := newAssessor()
+	var head []byte
+	started := false
+	add := func(b byte) {
+		if !started {
+			if b == ' ' || b == '\t' || b == '\n' || b == '\r' {
+				return
 			}
-		case strings.HasPrefix(upper, "INSERT INTO"), strings.HasPrefix(upper, "REPLACE INTO"):
-			name := first(insertRe, head)
-			inserts++
-			if name == "" {
-				problems = append(problems, "INSERT without a table name")
-			} else if _, ok := tables[name]; !ok {
-				problems = append(problems, "INSERT into unknown table "+name)
-			}
-		case strings.HasPrefix(upper, "DROP TABLE"):
-			if name := first(dropRe, head); name != "" {
-				delete(tables, name)
-			}
-		default:
-			ok := false
-			for _, prefix := range allowed {
-				if strings.HasPrefix(upper, prefix) {
-					ok = true
-					break
-				}
-			}
+			started = true
+		}
+		if len(head) < 8192 {
+			head = append(head, b)
+		}
+	}
+	flush := func() {
+		if stmt := strings.TrimSpace(string(head)); stmt != "" {
+			a.statement(stmt)
+		}
+		head = head[:0]
+		started = false
+	}
+	skipLine := func(first byte) Result {
+		if first == 0 {
+			return nulDump("stream")
+		}
+		if first == '\n' {
+			unread(first)
+			return Result{}
+		}
+		for {
+			b, ok := read()
 			if !ok {
-				snippet := upper
-				if len(snippet) > 80 {
-					snippet = snippet[:80]
-				}
-				problems = append(problems, "unrecognized statement: "+snippet)
+				return Result{}
+			}
+			if b == 0 {
+				return nulDump("stream")
+			}
+			if b == '\n' {
+				unread(b)
+				return Result{}
 			}
 		}
 	}
-	if creates == 0 {
-		problems = append(problems, "dump has no CREATE TABLE")
+
+	inSingle, inDouble, inBack := false, false, false
+	for {
+		c, ok := read()
+		if !ok {
+			break
+		}
+		if c == 0 {
+			return nulDump("stream")
+		}
+		if !inSingle && !inDouble && !inBack {
+			if c == '-' {
+				n1, ok1 := read()
+				if ok1 && n1 == '-' {
+					n2, ok2 := read()
+					if !ok2 || n2 == ' ' || n2 == '\t' || n2 < ' ' {
+						if ok2 {
+							if bad := skipLine(n2); bad.Reason != "" {
+								return bad
+							}
+						}
+						continue
+					}
+					unread(n2)
+				}
+				if ok1 {
+					unread(n1)
+				}
+				add(c)
+				continue
+			}
+			if c == '#' {
+				for {
+					b, okb := read()
+					if !okb {
+						break
+					}
+					if b == 0 {
+						return nulDump("stream")
+					}
+					if b == '\n' {
+						unread(b)
+						break
+					}
+				}
+				continue
+			}
+			if c == '/' {
+				n1, ok1 := read()
+				if ok1 && n1 == '*' {
+					prev := byte(0)
+					for {
+						b, okb := read()
+						if !okb {
+							break
+						}
+						if b == 0 {
+							return nulDump("stream")
+						}
+						if prev == '*' && b == '/' {
+							break
+						}
+						prev = b
+					}
+					continue
+				}
+				if ok1 {
+					unread(n1)
+				}
+				add(c)
+				continue
+			}
+			switch c {
+			case '\'':
+				inSingle = true
+			case '"':
+				inDouble = true
+			case '`':
+				inBack = true
+			case ';':
+				flush()
+				continue
+			}
+			add(c)
+			continue
+		}
+		add(c)
+		if c == '\\' && (inSingle || inDouble) {
+			n1, ok1 := read()
+			if !ok1 {
+				continue
+			}
+			if n1 == 0 {
+				return nulDump("stream")
+			}
+			add(n1)
+			continue
+		}
+		if inSingle && c == '\'' {
+			n1, ok1 := read()
+			if ok1 && n1 == '\'' {
+				add(n1)
+				continue
+			}
+			if ok1 {
+				unread(n1)
+			}
+			inSingle = false
+		} else if inDouble && c == '"' {
+			n1, ok1 := read()
+			if ok1 && n1 == '"' {
+				add(n1)
+				continue
+			}
+			if ok1 {
+				unread(n1)
+			}
+			inDouble = false
+		} else if inBack && c == '`' {
+			n1, ok1 := read()
+			if ok1 && n1 == '`' {
+				add(n1)
+				continue
+			}
+			if ok1 {
+				unread(n1)
+			}
+			inBack = false
+		}
 	}
-	names := make([]string, 0, len(tables))
-	for name := range tables {
+	flush()
+	if readErr != nil {
+		return Result{Mode: "stream", Reason: "could not read the dump", Tables: []string{}}
+	}
+	return a.finish("stream")
+}
+
+func nulDump(mode string) Result {
+	return Result{Mode: mode, Reason: "dump contains NUL bytes", Tables: []string{}}
+}
+
+type assessor struct {
+	tables     map[string]struct{}
+	problems   []string
+	inserts    int
+	creates    int
+	statements int
+}
+
+func newAssessor() *assessor {
+	return &assessor{tables: map[string]struct{}{}}
+}
+
+func (a *assessor) statement(stmt string) {
+	a.statements++
+	head := collapse(stmt)
+	upper := strings.ToUpper(head)
+	switch {
+	case strings.HasPrefix(upper, "CREATE TABLE"):
+		name := first(createTableRe, head)
+		if name == "" {
+			a.problems = append(a.problems, "CREATE TABLE without a table name")
+		} else {
+			a.tables[name] = struct{}{}
+			a.creates++
+		}
+	case strings.HasPrefix(upper, "INSERT INTO"), strings.HasPrefix(upper, "REPLACE INTO"):
+		name := first(insertRe, head)
+		a.inserts++
+		if name == "" {
+			a.problems = append(a.problems, "INSERT without a table name")
+		} else if _, ok := a.tables[name]; !ok {
+			a.problems = append(a.problems, "INSERT into unknown table "+name)
+		}
+	case strings.HasPrefix(upper, "DROP TABLE"):
+		if name := first(dropRe, head); name != "" {
+			delete(a.tables, name)
+		}
+	default:
+		allowed := []string{
+			"CREATE DATABASE", "DROP DATABASE", "LOCK TABLES", "UNLOCK TABLES",
+			"SET ", "START TRANSACTION", "COMMIT", "ROLLBACK", "USE ",
+			"ALTER TABLE", "CREATE INDEX", "CREATE UNIQUE INDEX",
+			"CREATE VIEW", "DROP VIEW", "CREATE ALGORITHM",
+		}
+		ok := false
+		for _, prefix := range allowed {
+			if strings.HasPrefix(upper, prefix) {
+				ok = true
+				break
+			}
+		}
+		if !ok {
+			snippet := upper
+			if len(snippet) > 80 {
+				snippet = snippet[:80]
+			}
+			a.problems = append(a.problems, "unrecognized statement: "+snippet)
+		}
+	}
+}
+
+func (a *assessor) finish(mode string) Result {
+	if a.creates == 0 {
+		a.problems = append(a.problems, "dump has no CREATE TABLE")
+	}
+	names := make([]string, 0, len(a.tables))
+	for name := range a.tables {
 		names = append(names, name)
 	}
 	sortStrings(names)
 	result := Result{
-		Importable: len(problems) == 0,
-		Mode:       "in_memory",
+		Importable: len(a.problems) == 0,
+		Mode:       mode,
 		Tables:     names,
-		Statements: len(statements),
-		Inserts:    inserts,
-		Creates:    creates,
+		Statements: a.statements,
+		Inserts:    a.inserts,
+		Creates:    a.creates,
 	}
-	if len(problems) > 0 {
+	if len(a.problems) > 0 {
+		problems := a.problems
 		if len(problems) > 8 {
 			problems = problems[:8]
 		}

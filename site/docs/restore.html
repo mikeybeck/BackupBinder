@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>Restore — BackupBinder</title>
+  <meta name="description" content="Restore a BackupBinder snapshot into an empty scratch directory. The live site and the repository are refused."/>
+  <link rel="preconnect" href="https://fonts.googleapis.com"/>
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+  <link href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;650;700;800&family=Source+Sans+3:ital,wght@0,400;0,600;0,700;1,400&display=swap" rel="stylesheet"/>
+  <link rel="stylesheet" href="../styles.css"/>
+</head>
+<body>
+  <a class="skip" href="#main">Skip to content</a>
+
+  <div class="cabinet">
+    <header class="drawer-chrome">
+      <div class="handle" aria-hidden="true"></div>
+      <nav class="hanging-tabs" aria-label="Primary">
+        <a class="tab tab--brand" href="../index.html">BackupBinder</a>
+        <a class="tab" href="index.html" aria-current="page">Docs</a>
+      </nav>
+    </header>
+
+    <main id="main">
+      <section class="folder folder--doc" aria-labelledby="doc-title">
+        <div class="folder__spine" aria-hidden="true"></div>
+        <div class="folder__tab-label" aria-hidden="true">Restore</div>
+        <div class="folder__face">
+          <h1 id="doc-title">Restore into an empty folder.</h1>
+          <p class="lede">A restore extracts a snapshot into a scratch directory. The live site stays where it is. Run the check once so you know the archive comes back.</p>
+          <nav class="doc-index" aria-label="Handbook">
+            <a href="index.html">Handbook</a>
+            <a href="install.html">Install</a>
+            <a href="first-backup.html">First backup</a>
+            <a href="restore.html" aria-current="page">Restore</a>
+            <a href="schedules.html">Schedules</a>
+            <a href="destinations.html">Destinations</a>
+            <a href="agents.html">Agents</a>
+          </nav>
+          <div class="doc-prose">
+            <h2>Check a restore, or just extract</h2>
+            <p>Both commands need the site's id and its exact root. <code>test_restore</code> extracts the snapshot, compares the files to the manifest, and records that the check passed. <code>restore_backup</code> extracts the snapshot into the folder you name.</p>
+            <pre class="sheet" tabindex="0"><code>./bin/backupbinder test_restore --id SITE --root /path/to/site
+./bin/backupbinder restore_backup --id SITE --root /path/to/site --scratch /tmp/empty-scratch</code></pre>
+            <p>Omit <code>--scratch</code> and the program creates a new empty directory under <code>var/scratch/&lt;site id&gt;/</code>. If you pass <code>--scratch</code>, that path has to be a directory with nothing in it. A path that does not exist yet is created. A path that already has files is refused. A path that exists and is not a directory is refused.</p>
+            <p>Without <code>--detach</code>, the command waits until the restore finishes. With <code>--detach</code>, poll <code>inspect_site</code> for the restore status.</p>
+
+            <h2>Paths that are refused</h2>
+            <p>The scratch path cannot be the live site, a directory inside it, or a parent directory that contains it. It cannot be the restic repository either. Those refusals are there so a restore cannot overwrite the site you are backing up, or the archive itself.</p>
+            <p>A path the program refuses is not used. If the files come back and do not match the manifest, the scratch directory is left in place and the live site is left unwritten. The error message names what failed.</p>
+
+            <h2>Restore confidence</h2>
+            <p>Until a scratch restore has passed, confidence is <code>never</code>. After <code>test_restore</code> succeeds, the site records the time that check passed. The site page shows it, next to the last run.</p>
+            <p>The check compares restored files with the manifest inventory. When the backup included a database dump, the check looks at that dump too. Confidence is the time of that passed check. It is not a separate health score.</p>
+          </div>
+          <nav class="doc-pager" aria-label="Adjacent pages">
+            <a href="first-backup.html"><span>Previous</span> First backup</a>
+            <a class="next" href="schedules.html"><span>Next</span> Schedules</a>
+          </nav>
+        </div>
+      </section>
+    </main>
+
+    <footer class="drawer-foot">
+      <p><strong>BackupBinder</strong> · Site backups on this machine</p>
+      <p class="muted">Open source. No cloud account required for a complete local backup.</p>
+    </footer>
+  </div>
+</body>
+</html>

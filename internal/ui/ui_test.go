@@ -6,8 +6,8 @@ import (
 	"strings"
 	"testing"
 
-	"local-backup/internal/fail"
-	"local-backup/internal/model"
+	"backupbinder/internal/fail"
+	"backupbinder/internal/model"
 )
 
 func TestPageTemplateParses(t *testing.T) {
@@ -251,7 +251,7 @@ func TestDestinationFormShowsFailureReason(t *testing.T) {
 			DestWarning: "Google Drive / rclone remote 'gdrive' is not configured.",
 			Destinations: []destView{{
 				ID: "gdrive-1", Kind: "gdrive", Enabled: true, Status: "failed",
-				Detail: "gdrive:local-backup/site",
+				Detail: "gdrive:backupbinder/site",
 				Reason: "Google Drive / rclone remote 'gdrive' is not configured. Run rclone config and create a Google Drive remote named 'gdrive'.",
 			}},
 		},
@@ -277,7 +277,7 @@ func TestDestinationFormOffersGoogleDrive(t *testing.T) {
 		DestKinds: []destKindView{
 			{ID: "gdrive", Label: "Google Drive", Note: "uses rclone", Fields: []destFieldView{
 				{Name: "host", Label: "Google Drive remote", Placeholder: "gdrive", Choices: []string{"gdrive"}},
-				{Name: "path", Label: "Folder in Google Drive", Placeholder: "local-backup/site"},
+				{Name: "path", Label: "Folder in Google Drive", Placeholder: "backupbinder/site"},
 			}},
 		},
 	})

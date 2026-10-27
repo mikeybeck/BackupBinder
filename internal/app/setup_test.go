@@ -25,7 +25,7 @@ func TestSetupRegistersOnceAndAsksBeforeBackup(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if second.SiteID != "fixture-wordpress" {
+	if second.SiteID != "fixture-wordpress" || !second.Reused || !strings.Contains(second.Note, "other-id") {
 		t.Fatalf("second id %s", second.SiteID)
 	}
 	listed, err := application.ListSites()
@@ -192,7 +192,7 @@ func TestSetupStartsFromServer(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result.Next == nil || result.Next.Step != "database" || !strings.Contains(result.Next.Reason, "first copy") {
+	if result.Next == nil || result.Next.Step != "database" || strings.Contains(result.Next.Reason, "first copy") {
 		t.Fatalf("%#v", result.Next)
 	}
 	site, err := application.DB.GetSite(result.SiteID)
@@ -209,8 +209,11 @@ func TestSetupStartsFromServer(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if both.Phase != "needs_input" {
+	if both.Phase != "needs_input" || both.Next == nil || len(both.Next.Options) != 2 {
 		t.Fatalf("%#v", both.Next)
+	}
+	if contains(both.Next.Fields, "path") && contains(both.Next.Fields, "host") {
+		t.Fatalf("location fields %#v", both.Next.Fields)
 	}
 }
 
@@ -263,6 +266,53 @@ func TestSiteFileReloadAndRejectsSecrets(t *testing.T) {
 	}
 	if err := again.ReloadSites(); err == nil {
 		t.Fatal("expected the site file to be rejected")
+	}
+}
+
+func TestSetupNextNamesTheCommand(t *testing.T) {
+	application := openTest(t)
+	root := filepath.Join(moduleRoot(t), "fixtures", "wordpress-site")
+	first, err := application.Setup(SetupInput{Path: root, Name: "Fixture WordPress", ID: "fixture-wordpress"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first.Next == nil || first.Next.Command != "setup" || first.Next.Accept != "database" || first.Next.Decline != "no-database" {
+		t.Fatalf("%#v", first.Next)
+	}
+	if !contains(first.Next.Fields, "id") || !contains(first.Next.Fields, "root") {
+		t.Fatalf("%#v", first.Next.Fields)
+	}
+	noDB, err := application.Setup(SetupInput{ID: first.SiteID, Root: first.Site.Root, NoDatabase: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	asked, err := application.Setup(SetupInput{ID: first.SiteID, Root: first.Site.Root, Remote: "nope"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if asked.Next == nil || !contains(asked.Next.Fields, "remote") || contains(asked.Next.Fields, "kind") {
+		t.Fatalf("%#v", asked.Next)
+	}
+	none, err := application.Setup(SetupInput{ID: first.SiteID, Root: noDB.Site.Root, Remote: "none"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if none.Next == nil || none.Next.Step != "schedule" || !strings.Contains(none.Next.Reason, "not installed") {
+		t.Fatalf("%#v", none.Next)
+	}
+	backup, err := application.Setup(SetupInput{ID: first.SiteID, Root: first.Site.Root, NoSchedule: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if backup.Phase != "confirm" || backup.Next == nil || backup.Next.Command != "setup" || backup.Next.Accept != "backup" || backup.Next.Decline != "no-backup" {
+		t.Fatalf("%s %#v", backup.Phase, backup.Next)
+	}
+	if _, err := application.Setup(SetupInput{ID: first.SiteID, Root: first.Site.Root, NoBackup: true}); err != nil {
+		t.Fatal(err)
+	}
+	_, err = application.Setup(SetupInput{ID: first.SiteID, Root: first.Site.Root, Host: "files.example", User: "backup", RemotePath: "/var/www/site"})
+	if err == nil || !strings.Contains(err.Error(), "set_location") {
+		t.Fatal(err)
 	}
 }
 

@@ -17,9 +17,9 @@ import (
 	"syscall"
 	"time"
 
-	"local-backup/internal/destination"
-	"local-backup/internal/fail"
-	"local-backup/internal/model"
+	"backupbinder/internal/destination"
+	"backupbinder/internal/fail"
+	"backupbinder/internal/model"
 )
 
 // Runner is a restic binary plus its cache directory.
@@ -181,7 +181,7 @@ func (r Runner) Backup(dir, repo, passwordFile, siteID, runID string, onStatus f
 			st.WrittenBytes = ReadWriteBytes(int(resticPID.Load()))
 			onStatus(st)
 		}
-	}, func(pid int) { resticPID.Store(int64(pid)) }, "backup", "--json", "--verbose", "--host", "local-backup", "--tag", "site="+siteID, "--tag", "run="+runID, ".")
+	}, func(pid int) { resticPID.Store(int64(pid)) }, "backup", "--json", "--verbose", "--host", "backupbinder", "--tag", "site="+siteID, "--tag", "run="+runID, ".")
 	if err != nil {
 		return "", 0, err
 	}
@@ -194,11 +194,11 @@ func (r Runner) Backup(dir, repo, passwordFile, siteID, runID string, onStatus f
 	return last.SnapshotID, last.DataAdded, nil
 }
 
-// Check verifies the repository structure.
+// Check reads the repository structure and every stored data blob.
 func (r Runner) Check(repo, passwordFile string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Hour)
 	defer cancel()
-	_, stderr, code, err := r.run(ctx, repo, passwordFile, nil, nil, "check")
+	_, stderr, code, err := r.run(ctx, repo, passwordFile, nil, nil, "check", "--read-data")
 	if err != nil {
 		return err
 	}
@@ -227,7 +227,7 @@ func (r Runner) Forget(repo, passwordFile string, extraEnv []string, siteID stri
 	if !policy.Active() {
 		return ForgetOutcome{}, nil
 	}
-	args := append(append([]string{}, globalOpts...), "forget", "--json", "--group-by", "host", "--host", "local-backup", "--tag", "site="+siteID)
+	args := append(append([]string{}, globalOpts...), "forget", "--json", "--group-by", "host", "--host", "backupbinder", "--tag", "site="+siteID)
 	args = append(args, policy.ForgetArgs()...)
 	outcome, err := r.forgetOnce(repo, passwordFile, extraEnv, args...)
 	if err != nil && clearStaleLock(r, repo, passwordFile, extraEnv, err, globalOpts...) {
@@ -391,24 +391,41 @@ func retentionLockHint(stderr string) string {
 	return "Snapshots were not removed. The latest backup is still stored."
 }
 
-// List returns snapshot paths that start with /.
-func (r Runner) List(repo, passwordFile, snapshotID string) ([]string, error) {
+// Node is one file or directory inside a snapshot.
+type Node struct {
+	Path       string `json:"path"`
+	Type       string `json:"type"`
+	Size       int64  `json:"size"`
+	StructType string `json:"struct_type"`
+}
+
+// List returns the files and directories in one snapshot.
+func (r Runner) List(repo, passwordFile, snapshotID string) ([]Node, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
 	defer cancel()
-	stdout, stderr, code, err := r.run(ctx, repo, passwordFile, nil, nil, "ls", snapshotID)
+	stdout, stderr, code, err := r.run(ctx, repo, passwordFile, nil, nil, "ls", "--json", snapshotID)
 	if err != nil {
 		return nil, err
 	}
 	if code != 0 {
 		return nil, &fail.Error{Code: "step_failed", Message: "restic could not list the snapshot.", Step: "verify", ExitCode: fail.ExitCode(code), Stderr: tail(stderr), Hint: "The snapshot id may be wrong, or the password file does not match the repository."}
 	}
-	var paths []string
+	var nodes []Node
 	for _, line := range strings.Split(stdout, "\n") {
-		if strings.HasPrefix(line, "/") {
-			paths = append(paths, line)
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
 		}
+		var node Node
+		if err := json.Unmarshal([]byte(line), &node); err != nil {
+			return nil, &fail.Error{Code: "step_failed", Message: "restic could not list the snapshot.", Step: "verify", Stderr: tail(line), Hint: "The snapshot listing was not JSON."}
+		}
+		if node.StructType != "node" {
+			continue
+		}
+		nodes = append(nodes, node)
 	}
-	return paths, nil
+	return nodes, nil
 }
 
 // Restore extracts a snapshot into target. target must already exist.
@@ -572,7 +589,7 @@ func rcloneDestinationHint(destURL, op, stderr string) (string, string) {
 			"Run rclone config reconnect " + quote(remote) + ": and authorize again. The local snapshot is already stored."
 	case strings.Contains(lower, "executable file not found") || strings.Contains(lower, "rclone:") && strings.Contains(lower, "not found"):
 		return "rclone is not available for this destination.",
-			"Install rclone, put it on PATH, or set LOCAL_BACKUP_RCLONE / .tools/rclone. The local snapshot is already stored."
+			"Install rclone, put it on PATH, or set BACKUPBINDER_RCLONE / .tools/rclone. The local snapshot is already stored."
 	default:
 		detail := firstUsefulLine(stderr)
 		message := "Could not " + op + " the rclone destination " + destURL + "."

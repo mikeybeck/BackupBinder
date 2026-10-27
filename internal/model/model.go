@@ -240,7 +240,7 @@ type Progress struct {
 	BytesTotal   int64   `json:"bytes_total,omitempty"`
 }
 
-const Schema = "local-backup.manifest/v1"
+const Schema = "backupbinder.manifest/v1"
 const ModelLine = "site -> sources -> snapshot -> destinations -> restore"
 
 func DatabaseSource(site Site) *Source {

@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>Agents — BackupBinder</title>
+  <meta name="description" content="BackupBinder commands print JSON. Agents use the same commands over stdio MCP, after an exact site match."/>
+  <link rel="preconnect" href="https://fonts.googleapis.com"/>
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+  <link href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;650;700;800&family=Source+Sans+3:ital,wght@0,400;0,600;0,700;1,400&display=swap" rel="stylesheet"/>
+  <link rel="stylesheet" href="../styles.css"/>
+</head>
+<body>
+  <a class="skip" href="#main">Skip to content</a>
+
+  <div class="cabinet">
+    <header class="drawer-chrome">
+      <div class="handle" aria-hidden="true"></div>
+      <nav class="hanging-tabs" aria-label="Primary">
+        <a class="tab tab--brand" href="../index.html">BackupBinder</a>
+        <a class="tab" href="index.html" aria-current="page">Docs</a>
+      </nav>
+    </header>
+
+    <main id="main">
+      <section class="folder folder--doc" aria-labelledby="doc-title">
+        <div class="folder__spine" aria-hidden="true"></div>
+        <div class="folder__tab-label" aria-hidden="true">Agents</div>
+        <div class="folder__face">
+          <h1 id="doc-title">The same commands, as JSON.</h1>
+          <p class="lede">A person, a script, and an agent call the same commands. Every command prints JSON. A failure looks like this:</p>
+          <nav class="doc-index" aria-label="Handbook">
+            <a href="index.html">Handbook</a>
+            <a href="install.html">Install</a>
+            <a href="first-backup.html">First backup</a>
+            <a href="restore.html">Restore</a>
+            <a href="schedules.html">Schedules</a>
+            <a href="destinations.html">Destinations</a>
+            <a href="agents.html" aria-current="page">Agents</a>
+          </nav>
+          <div class="doc-prose">
+            <pre class="sheet" tabindex="0"><code>{"ok": false, "error": {"code": "...", "message": "..."}}</code></pre>
+
+            <h2>Name the site exactly</h2>
+            <p><code>identify</code> matches the whole id, the whole display name, or the whole root. Use the name the person actually gave you.</p>
+            <pre class="sheet" tabindex="0"><code>./bin/backupbinder identify --query "Fixture WordPress"
+./bin/backupbinder list_sites
+./bin/backupbinder inspect_site --id SITE</code></pre>
+            <p>When the result has <code>access.ask_user</code> set, ask how this machine reaches the site, then ask only for that option's fields. A hostname is not a local directory. Supply the host, user, path, and keys you were given. Do not fill in ones you were not given.</p>
+            <p><code>inspect_site</code> shows one site, its last run, restore status, and the cron line. Read the root before you change anything.</p>
+
+            <h2>Changes need the id and the root</h2>
+            <p><code>create_backup</code>, <code>set_schedule</code>, <code>add_destination</code>, <code>set_database</code>, <code>test_restore</code>, and <code>restore_backup</code> refuse to run unless <code>--root</code> is that site's root. <code>setup</code> registers a new site, or returns the site that already uses that directory. A backup, a schedule change, and a remote upload wait until the caller asks for them.</p>
+            <pre class="sheet" tabindex="0"><code>./bin/backupbinder create_backup --id SITE --root /path/to/site</code></pre>
+            <p><code>create_backup</code> waits until the backup finishes, unless you pass <code>--detach</code>. After <code>--detach</code>, poll <code>inspect_site</code> for <code>last_run.progress</code> and <code>last_run.ok</code>.</p>
+            <p>A few more commands you will use, with their flags printed by <code>agent</code>: <code>verify_backup</code> checks a snapshot, <code>list_backups</code> lists runs, <code>compare_backups</code> takes two run ids, and <code>explain_failure</code> reads the last failure.</p>
+
+            <h2>An agent over MCP</h2>
+            <p><code>mcp</code> speaks MCP on stdio. The host starts the program. In Cursor, the config looks like this:</p>
+            <pre class="sheet" tabindex="0"><code>{
+  "mcpServers": {
+    "backupbinder": {
+      "command": "/path/to/backupbinder",
+      "args": ["--home", "/path/to/var", "mcp"]
+    }
+  }
+}</code></pre>
+            <p>The tools are the same commands. <code>serve</code> is not a tool, because it does not return. <code>doctor</code> prints this config with the paths filled in. <code>mcp</code> does not start until restic is found.</p>
+            <pre class="sheet" tabindex="0"><code>./bin/backupbinder agent</code></pre>
+            <p><code>agent</code> prints the command list and the short instructions. This page does not repeat every flag.</p>
+
+            <h2>Secrets stay out of the output</h2>
+            <p>Database passwords, access keys, secret keys, and the restic password are not printed. The agent commands also leave out an arbitrary shell, a raw delete of the repository, a key export, and downloading a full archive into the chat.</p>
+          </div>
+          <nav class="doc-pager" aria-label="Adjacent pages">
+            <a href="destinations.html"><span>Previous</span> Destinations</a>
+          </nav>
+        </div>
+      </section>
+    </main>
+
+    <footer class="drawer-foot">
+      <p><strong>BackupBinder</strong> · Site backups on this machine</p>
+      <p class="muted">Open source. No cloud account required for a complete local backup.</p>
+    </footer>
+  </div>
+</body>
+</html>

@@ -14,11 +14,11 @@ import (
 	"strings"
 	"time"
 
-	"local-backup/internal/addon"
-	"local-backup/internal/discover"
-	"local-backup/internal/fail"
-	"local-backup/internal/model"
-	"local-backup/internal/sqlcheck"
+	"backupbinder/internal/addon"
+	"backupbinder/internal/discover"
+	"backupbinder/internal/fail"
+	"backupbinder/internal/model"
+	"backupbinder/internal/sqlcheck"
 )
 
 // EstimateFiles walks the site root with the same skip and exclude rules as StageFiles,
@@ -252,7 +252,7 @@ func Database(site model.Site, output, secretDir string) (model.DBCapture, []str
 			if name != "mysqldump" || source.Name == "" || source.User == "" {
 				return model.DBCapture{}, secrets, fail.New("step_failed", "Unknown database method "+name+".")
 			}
-			spec = addon.Dump{Engine: "mysqldump", TimeoutSec: 600, FailMessage: "mysqldump failed.", Report: "mysqldump"}
+			spec = addon.Dump{Engine: "mysqldump", TimeoutSec: 7200, FailMessage: "mysqldump failed.", Report: "mysqldump"}
 		}
 		if auto && spec.SkipIfUnreachable && !reachable(site, matched) {
 			continue
@@ -507,31 +507,12 @@ func exportMySQL(matched addon.Addon, spec addon.Dump, site model.Site, output, 
 		return model.DBCapture{}, secrets, &fail.Error{Code: "step_failed", Message: "The database password contains a newline and cannot be passed safely.", Step: "database_dump"}
 	}
 	secrets = append(secrets, password)
-	if err := os.MkdirAll(secretDir, 0o700); err != nil {
-		return model.DBCapture{}, secrets, err
-	}
-	defaults := filepath.Join(secretDir, fmt.Sprintf("mysqldump-%d.cnf", os.Getpid()))
-	lines := []string{"[client]", "user=" + conn.User, "password=" + password}
-	if conn.Socket != "" {
-		lines = append(lines, "socket="+conn.Socket)
-	} else {
-		host := conn.Host
-		if host == "" {
-			host = "127.0.0.1"
-		}
-		lines = append(lines, "host="+host)
-		if conn.Port != 0 {
-			lines = append(lines, "port="+strconv.Itoa(conn.Port))
-		}
-	}
-	if err := writeSecret(defaults, strings.Join(lines, "\n")+"\n"); err != nil {
-		return model.DBCapture{}, secrets, err
-	}
-	defer os.Remove(defaults)
 	if err := os.MkdirAll(filepath.Dir(output), 0o755); err != nil {
 		return model.DBCapture{}, secrets, err
 	}
-	cmd := exec.Command(bin, "--defaults-extra-file="+defaults, "--single-transaction", "--skip-lock-tables", "--no-tablespaces", "--result-file="+output, conn.Name)
+	// The defaults file is the command's stdin. A named file would survive SIGKILL.
+	cmd := exec.Command(bin, "--defaults-extra-file=/dev/stdin", "--single-transaction", "--skip-lock-tables", "--no-tablespaces", "--result-file="+output, conn.Name)
+	cmd.Stdin = strings.NewReader(mysqlDefaults(conn, password))
 	cmd.WaitDelay = 2 * time.Second
 	timeout := time.Duration(spec.TimeoutSec) * time.Second
 	if timeout <= 0 {
@@ -604,13 +585,20 @@ func DumpReport(output, method string) (model.DBCapture, error) {
 	if err != nil {
 		return model.DBCapture{}, err
 	}
-	text, err := os.ReadFile(output)
+	f, err := os.Open(output)
 	if err != nil {
 		return model.DBCapture{}, err
 	}
-	assessment := sqlcheck.Assess(string(text))
+	defer f.Close()
+	assessment := sqlcheck.AssessReader(f)
 	if !assessment.Importable {
 		return model.DBCapture{}, &fail.Error{Code: "step_failed", Message: "The database dump is not importable. " + assessment.Reason, Step: "database_dump", Hint: "The dump needs CREATE TABLE statements and inserts that match those tables."}
+	}
+	version := ""
+	if _, err := f.Seek(0, io.SeekStart); err == nil {
+		head := make([]byte, 1<<20)
+		n, _ := f.Read(head)
+		version = serverVersion(string(head[:n]))
 	}
 	sum, err := hashFile(output)
 	if err != nil {
@@ -623,7 +611,7 @@ func DumpReport(output, method string) (model.DBCapture, error) {
 		SHA256:        sum,
 		Tables:        assessment.Tables,
 		Importable:    true,
-		ServerVersion: serverVersion(string(text)),
+		ServerVersion: version,
 	}, nil
 }
 
@@ -640,25 +628,6 @@ func serverVersion(text string) string {
 func nonEmpty(path string) bool {
 	info, err := os.Stat(path)
 	return err == nil && info.Size() > 0
-}
-
-func writeSecret(path, text string) error {
-	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
-		return err
-	}
-	f, err := os.OpenFile(path, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o600)
-	if err != nil {
-		return err
-	}
-	_, writeErr := f.WriteString(text)
-	closeErr := f.Close()
-	if writeErr != nil {
-		return writeErr
-	}
-	if err := os.Chmod(path, 0o600); err != nil {
-		return err
-	}
-	return closeErr
 }
 
 func scrub(text string, secrets []string) string {

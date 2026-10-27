@@ -1,4 +1,4 @@
--- Fixture dump for local-backup. Not a live database.
+-- Fixture dump for backupbinder. Not a live database.
 DROP TABLE IF EXISTS `wp_options`;
 CREATE TABLE `wp_options` (
   `option_id` bigint unsigned NOT NULL,

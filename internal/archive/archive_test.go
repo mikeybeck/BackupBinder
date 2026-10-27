@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
-	"local-backup/internal/fail"
-	"local-backup/internal/model"
+	"backupbinder/internal/fail"
+	"backupbinder/internal/model"
 )
 
 func TestDestinationURL(t *testing.T) {
@@ -24,14 +24,14 @@ func TestDestinationURL(t *testing.T) {
 	if err != nil || b2 != "b2:bucket:site" {
 		t.Fatal(b2, err)
 	}
-	drive, err := DestinationURL(model.Destination{Kind: "gdrive", Host: "gdrive", Path: "local-backup/site"})
-	if err != nil || drive != "rclone:gdrive:local-backup/site" {
+	drive, err := DestinationURL(model.Destination{Kind: "gdrive", Host: "gdrive", Path: "backupbinder/site"})
+	if err != nil || drive != "rclone:gdrive:backupbinder/site" {
 		t.Fatal(drive, err)
 	}
 }
 
 func TestRcloneDestinationHintMissingRemote(t *testing.T) {
-	err := destinationCopyError("rclone:gdrive:local-backup/site", "initialize", `Fatal: create repository at rclone:gdrive:local-backup/site failed: error listing files: didn't find section in config file ("gdrive")`)
+	err := destinationCopyError("rclone:gdrive:backupbinder/site", "initialize", `Fatal: create repository at rclone:gdrive:backupbinder/site failed: error listing files: didn't find section in config file ("gdrive")`)
 	fe, ok := err.(*fail.Error)
 	if !ok {
 		t.Fatal(err)
@@ -46,8 +46,8 @@ func TestRcloneDestinationHintMissingRemote(t *testing.T) {
 
 func TestRcloneDestinationHintQuota(t *testing.T) {
 	stderr := `rclone: 2026/10/19 16:18:30 ERROR : data/8e/8e0b: Post request put error: googleapi: Error 403: Quota exceeded for quota metric 'Queries' and limit 'Previous quota: Requests per minute'
-Fatal: copy to rclone:gdrive:local-backup/wpfoundry.app failed`
-	err := destinationCopyError("rclone:gdrive:local-backup/wpfoundry.app", "copy", stderr)
+Fatal: copy to rclone:gdrive:backupbinder/wpfoundry.app failed`
+	err := destinationCopyError("rclone:gdrive:backupbinder/wpfoundry.app", "copy", stderr)
 	fe, ok := err.(*fail.Error)
 	if !ok {
 		t.Fatal(err)

@@ -7,10 +7,10 @@ import (
 	"regexp"
 	"sync"
 
-	"local-backup/internal/archive"
-	"local-backup/internal/fail"
-	"local-backup/internal/model"
-	"local-backup/internal/store"
+	"backupbinder/internal/archive"
+	"backupbinder/internal/fail"
+	"backupbinder/internal/model"
+	"backupbinder/internal/store"
 )
 
 var idPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,63}$`)
@@ -67,7 +67,7 @@ func (a *App) Close() error {
 }
 
 func DefaultHome() string {
-	if value := os.Getenv("LOCAL_BACKUP_HOME"); value != "" {
+	if value := os.Getenv("BACKUPBINDER_HOME"); value != "" {
 		return value
 	}
 	if root := findModuleRoot(); root != "" {
@@ -81,11 +81,11 @@ func DefaultHome() string {
 }
 
 func FindRestic() (string, error) {
-	if override := os.Getenv("LOCAL_BACKUP_RESTIC"); override != "" {
+	if override := os.Getenv("BACKUPBINDER_RESTIC"); override != "" {
 		if st, err := os.Stat(override); err == nil && !st.IsDir() {
 			return override, nil
 		}
-		return "", fail.New("restic_missing", "LOCAL_BACKUP_RESTIC does not point at an executable.")
+		return "", fail.New("restic_missing", "BACKUPBINDER_RESTIC does not point at an executable.")
 	}
 	if root := findModuleRoot(); root != "" {
 		candidate := filepath.Join(root, ".tools", "restic")
@@ -96,7 +96,7 @@ func FindRestic() (string, error) {
 	if found, err := exec.LookPath("restic"); err == nil {
 		return found, nil
 	}
-	return "", fail.New("restic_missing", "restic is not installed. Put it on PATH, or set LOCAL_BACKUP_RESTIC. This checkout can use .tools/restic.")
+	return "", fail.New("restic_missing", "restic is not installed. Put it on PATH, or set BACKUPBINDER_RESTIC. This checkout can use .tools/restic.")
 }
 
 func findModuleRoot() string {

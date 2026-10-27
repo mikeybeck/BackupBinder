@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"local-backup/internal/model"
+	"backupbinder/internal/model"
 )
 
 func TestRetentionPolicy(t *testing.T) {

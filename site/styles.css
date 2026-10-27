@@ -530,6 +530,182 @@ main {
   font-weight: 800;
 }
 
+.section-lede a {
+  color: var(--stamp-hover);
+  text-underline-offset: 0.15em;
+}
+
+/* —— Handbook —— */
+html {
+  scrollbar-color: var(--metal-edge) var(--metal-deep);
+}
+
+.sheet {
+  scrollbar-color: var(--metal-edge) var(--cream);
+}
+
+.folder--doc {
+  margin-top: 1.6rem;
+}
+
+.folder--doc h1 {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: clamp(1.45rem, 3vw, 2rem);
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  line-height: 1.2;
+  max-width: 22ch;
+  text-wrap: balance;
+}
+
+.doc-index {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem 1rem;
+  margin: 1.35rem 0 0;
+  padding-top: 0.85rem;
+  border-top: 2px solid var(--metal-deep);
+  max-width: 44rem;
+}
+
+.doc-index a {
+  font-family: var(--font-display);
+  font-size: 0.78rem;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  text-decoration: none;
+  color: var(--ink);
+  border-bottom: 2px solid transparent;
+  padding-bottom: 0.1rem;
+}
+
+.doc-index a:hover {
+  border-bottom-color: var(--kraft);
+}
+
+.doc-index a[aria-current="page"] {
+  color: var(--stamp-hover);
+  border-bottom-color: var(--stamp);
+}
+
+.chapters {
+  list-style: none;
+  margin: 1.75rem 0 0;
+  padding: 0;
+  border-top: 2px solid var(--metal-deep);
+  max-width: 40rem;
+}
+
+.chapters li {
+  padding: 1.05rem 0;
+  border-bottom: 1px solid rgba(26, 28, 32, 0.18);
+}
+
+.chapters a {
+  font-family: var(--font-display);
+  font-weight: 800;
+  font-size: 1.05rem;
+  color: var(--ink);
+  text-decoration: underline;
+  text-decoration-thickness: 2px;
+  text-underline-offset: 0.18em;
+  text-decoration-color: var(--kraft);
+}
+
+.chapters a:hover {
+  color: var(--stamp-hover);
+  text-decoration-color: var(--stamp);
+}
+
+.chapters p {
+  margin: 0.35rem 0 0;
+  color: var(--ink-soft);
+  max-width: 52ch;
+}
+
+.doc-prose h2 {
+  margin: 2.35rem 0 0.5rem;
+  font-family: var(--font-display);
+  font-size: clamp(1.2rem, 2.4vw, 1.45rem);
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  line-height: 1.25;
+  max-width: 28ch;
+  text-wrap: balance;
+}
+
+.doc-prose p,
+.doc-prose li {
+  max-width: var(--measure);
+}
+
+.doc-prose p {
+  margin: 0.8rem 0 0;
+  color: var(--ink-soft);
+}
+
+.doc-prose ul,
+.doc-prose ol {
+  margin: 0.8rem 0 0;
+  padding-left: 1.2rem;
+  color: var(--ink-soft);
+}
+
+.doc-prose li + li {
+  margin-top: 0.45rem;
+}
+
+.doc-prose a {
+  color: var(--stamp-hover);
+  text-underline-offset: 0.15em;
+}
+
+.doc-prose .sheet {
+  max-width: 44rem;
+}
+
+.doc-pager {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 1rem 1.5rem;
+  margin-top: 2.35rem;
+  padding-top: 1rem;
+  border-top: 2px solid var(--metal-deep);
+  max-width: 44rem;
+}
+
+.doc-pager a {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  text-decoration: none;
+  color: var(--ink);
+  font-family: var(--font-display);
+  font-weight: 800;
+  font-size: 1.05rem;
+}
+
+.doc-pager a span {
+  font-size: 0.75rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+  font-weight: 800;
+}
+
+.doc-pager a:hover {
+  color: var(--stamp-hover);
+}
+
+.doc-pager .next {
+  margin-left: auto;
+  text-align: right;
+  align-items: flex-end;
+}
+
 @media (max-width: 720px) {
   .cross-check {
     grid-template-columns: 1fr 1fr;

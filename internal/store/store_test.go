@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"local-backup/internal/model"
+	"backupbinder/internal/model"
 
 	_ "modernc.org/sqlite"
 )

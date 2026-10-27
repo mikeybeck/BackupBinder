@@ -1,6 +1,6 @@
 {
   "title": "Choose the visual world",
-  "question": "Whole localhost UI redesign for Local backup. Operate mode: minimum-hassle setup first; trust after backups exist. The roll assigned Field Notebook. Keep it, take an alternate, or re-roll.",
+  "question": "Whole localhost UI redesign for BackupBinder. Operate mode: minimum-hassle setup first; trust after backups exist. The roll assigned Field Notebook. Keep it, take an alternate, or re-roll.",
   "options": [
     {
       "id": "assigned",
@@ -10,7 +10,7 @@
       "thesis": "Your backups live as dated pages on this machine — set up first, then read trust like a margin note.",
       "palette": ["#e6e2d6", "#2c3136", "#1a4f8b", "#5c6b4a", "#8c2f2f"],
       "materials": ["graph paper ground", "graphite ink", "margin rule"],
-      "viewport": "Local backup shell with Set up a backup as the lead action; empty state teaches files-first local-only; when sites exist, a quiet list expands for restore confidence.",
+      "viewport": "BackupBinder shell with Set up a backup as the lead action; empty state teaches files-first local-only; when sites exist, a quiet list expands for restore confidence.",
       "risk": "Can feel sparse or “notes app” if the setup path isn’t the loudest thing on first open.",
       "raised": [
         {

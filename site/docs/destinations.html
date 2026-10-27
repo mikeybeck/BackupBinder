@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>Destinations — BackupBinder</title>
+  <meta name="description" content="Copy a finished BackupBinder archive to SFTP, disk, S3, B2, or Google Drive. A local archive is already a complete backup."/>
+  <link rel="preconnect" href="https://fonts.googleapis.com"/>
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+  <link href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;650;700;800&family=Source+Sans+3:ital,wght@0,400;0,600;0,700;1,400&display=swap" rel="stylesheet"/>
+  <link rel="stylesheet" href="../styles.css"/>
+</head>
+<body>
+  <a class="skip" href="#main">Skip to content</a>
+
+  <div class="cabinet">
+    <header class="drawer-chrome">
+      <div class="handle" aria-hidden="true"></div>
+      <nav class="hanging-tabs" aria-label="Primary">
+        <a class="tab tab--brand" href="../index.html">BackupBinder</a>
+        <a class="tab" href="index.html" aria-current="page">Docs</a>
+      </nav>
+    </header>
+
+    <main id="main">
+      <section class="folder folder--doc" aria-labelledby="doc-title">
+        <div class="folder__spine" aria-hidden="true"></div>
+        <div class="folder__tab-label" aria-hidden="true">Destinations</div>
+        <div class="folder__face">
+          <h1 id="doc-title">Copy the archive somewhere else.</h1>
+          <p class="lede">Where the site is read from, and where the finished archive is copied, are two different choices. You can skip the second one.</p>
+          <nav class="doc-index" aria-label="Handbook">
+            <a href="index.html">Handbook</a>
+            <a href="install.html">Install</a>
+            <a href="first-backup.html">First backup</a>
+            <a href="restore.html">Restore</a>
+            <a href="schedules.html">Schedules</a>
+            <a href="destinations.html" aria-current="page">Destinations</a>
+            <a href="agents.html">Agents</a>
+          </nav>
+          <div class="doc-prose">
+            <h2>Where the files are read</h2>
+            <p>Each site is read from one place: a directory on this machine, or one SFTP server. Saving a server replaces the previous server. The next backup copies that server into the local directory, then archives that copy. That step is covered on the <a href="first-backup.html">first backup</a> page.</p>
+
+            <h2>Where the archive is copied</h2>
+            <p>A destination receives a copy of the finished local archive. With no destination enabled, the run stays on this computer. You can save a destination and leave it disabled. It is used on a later backup only after you enable it.</p>
+            <p>The shipped kinds are SFTP, disk, S3, B2, and Google Drive. The local restic repository is the primary archive. It is not one of these kinds, and a disk destination cannot be the live site or that repository.</p>
+            <pre class="sheet" tabindex="0"><code>./bin/backupbinder add_destination --id SITE --root /path/to/site --kind sftp --host files.example --user backup --path /repos/site
+./bin/backupbinder set_destination --id SITE --root /path/to/site --destination DESTINATION --enabled
+./bin/backupbinder remove_destination --id SITE --root /path/to/site --destination DESTINATION</code></pre>
+            <p>SFTP as a destination can be a different host from the server the site is read from. SSH uses the keys already on this machine. <code>--path</code> on a destination is the folder the archive is copied into. The JSON from <code>add_destination</code> includes a destination id. Pass that id to <code>set_destination</code> and <code>remove_destination</code>.</p>
+
+            <h2>Google Drive</h2>
+            <p>Google Drive uses restic's rclone backend. Put rclone on <code>PATH</code> or at <code>.tools/rclone</code>, create a remote with <code>rclone config</code>, and confirm the name appears in <code>rclone listremotes</code>. Then pass that remote name and a folder path.</p>
+            <pre class="sheet" tabindex="0"><code>./bin/backupbinder add_destination --id SITE --root /path/to/site --kind gdrive --host REMOTE --path backupbinder/SITE</code></pre>
+            <p>For this kind, <code>--host</code> is the rclone remote name and <code>--path</code> is the folder in Drive. Saving an enabled Google Drive destination, or starting a backup that uses one, checks that the remote exists before any local snapshot work.</p>
+
+            <h2>Secrets</h2>
+            <p><code>var/secrets/</code> holds the restic password and any destination credentials, mode <code>0600</code>. Access keys and secret keys are not printed back. They are rejected if you put them in <code>var/sites/&lt;id&gt;.json</code>.</p>
+            <p>S3 takes a bucket, an access key, and a secret key, plus an optional prefix and an optional endpoint. B2 takes a bucket, an account id, and an application key, plus an optional prefix. The keys are stored under <code>var/secrets/</code>.</p>
+
+            <h2>Adding a kind</h2>
+            <p>A JSON file in <code>destinations/</code> next to the program can add a destination kind or replace one with the same id. The file names the fields, the restic URL template, credential environment variables, helper tools, and a few named checks the program already knows. The primary local repository stays built in.</p>
+          </div>
+          <nav class="doc-pager" aria-label="Adjacent pages">
+            <a href="schedules.html"><span>Previous</span> Schedules</a>
+            <a class="next" href="agents.html"><span>Next</span> Agents</a>
+          </nav>
+        </div>
+      </section>
+    </main>
+
+    <footer class="drawer-foot">
+      <p><strong>BackupBinder</strong> · Site backups on this machine</p>
+      <p class="muted">Open source. No cloud account required for a complete local backup.</p>
+    </footer>
+  </div>
+</body>
+</html>

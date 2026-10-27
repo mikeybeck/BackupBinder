@@ -9,10 +9,10 @@ import (
 	"syscall"
 	"time"
 
-	"local-backup/internal/archive"
-	"local-backup/internal/fail"
-	"local-backup/internal/model"
-	"local-backup/internal/store"
+	"backupbinder/internal/archive"
+	"backupbinder/internal/fail"
+	"backupbinder/internal/model"
+	"backupbinder/internal/store"
 )
 
 type progressWriter struct {
@@ -93,6 +93,9 @@ func (a *App) runIsLive(siteID, runID string) bool {
 // settleRun marks an in-progress run as interrupted when no process is still backing it up.
 func (a *App) settleRun(run store.Run) (store.Run, error) {
 	if !run.InProgress() || a.runIsLive(run.SiteID, run.RunID) {
+		return run, nil
+	}
+	if started, err := time.Parse(time.RFC3339, run.StartedAt); err == nil && time.Since(started) < 20*time.Second {
 		return run, nil
 	}
 	fe := &fail.Error{

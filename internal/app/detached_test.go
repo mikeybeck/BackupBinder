@@ -26,7 +26,7 @@ func TestStartBackupDetachedRefusesWhenBusy(t *testing.T) {
 	if err := application.DB.BeginRun("notes", "20261019T000000Z", "2026-10-19T00:00:00Z"); err != nil {
 		t.Fatal(err)
 	}
-	if err := application.StartBackupDetached("notes"); err == nil {
+	if _, err := application.StartBackupDetached("notes"); err == nil {
 		t.Fatal("expected busy")
 	}
 }

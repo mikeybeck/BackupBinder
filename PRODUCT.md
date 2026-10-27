@@ -6,7 +6,7 @@
 
 - **Name:** BackupBinder
 - **Subtitle:** Site backups on this machine
-- **Binary (current):** `local-backup` — rename deferred; marketing and product docs use BackupBinder
+- **Binary:** `backupbinder`
 
 ## Platform
 
@@ -28,7 +28,7 @@ Same backup contract for humans and agents (JSON CLI and MCP share one catalog).
 
 ## Operating Context
 
-- Data under `var/` (or `--home` / `LOCAL_BACKUP_HOME`); secrets in `var/secrets/` mode `0600`
+- Data under `var/` (or `--home` / `BACKUPBINDER_HOME`); secrets in `var/secrets/` mode `0600`
 - Restic (and rclone for Google Drive) as separate binaries on PATH or under `.tools/`
 - Schedules are cron fields on the site; system cron must call `run_scheduled`
 - UI via `serve` on localhost only; agents are not expected to drive the web UI
@@ -45,7 +45,7 @@ Same backup contract for humans and agents (JSON CLI and MCP share one catalog).
 - Never invent access fields; SFTP uses existing SSH keys (no SSH passwords)
 - Never print database passwords, access keys, secret keys, or restic passwords
 - Omit from agent/MCP unless designed later: arbitrary shell, raw prune/delete-repo, key export, downloading full archives into chat
-- Marketing surface: static landing under `site/` (Persuade), hosted on Cloudflare Pages as project `backupbinder` (https://backupbinder.pages.dev; custom domain backupbinder.com). Localhost Operate UI remains a separate world. Do not invent testimonials, customers, benchmarks, or capabilities.
+- Marketing surface: static landing under `site/` (Persuade) and a handbook under `site/docs/` (Read), hosted on Cloudflare Pages as project `backupbinder` (https://backupbinder.pages.dev; custom domain backupbinder.com). Localhost Operate UI remains a separate world. Do not invent testimonials, customers, benchmarks, or capabilities.
 
 ## Evidence on Hand
 

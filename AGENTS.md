@@ -1,6 +1,6 @@
 # Agent architecture
 
-Local backup is built so agents can **operate** it and **extend** it. The product is the backup contract (sources, snapshot, destinations, restore), not a WordPress host. WordPress is one shipped addon.
+BackupBinder is built so agents can **operate** it and **extend** it. The product is the backup contract (sources, snapshot, destinations, restore), not a WordPress host. WordPress is one shipped addon.
 
 Read this before changing the CLI, MCP layer, addons, destinations, or restore path.
 
@@ -46,7 +46,7 @@ Freeze and version schemas carefully. Agents copy golden examples; if core silen
 
 ## MCP
 
-- First-class transport today: **stdio** (`local-backup mcp`), launched by the host next to the engine.
+- First-class transport today: **stdio** (`backupbinder mcp`), launched by the host next to the engine.
 - MCP is a thin adapter over the catalog. It must not know Borg vs S3 vs Postgres; it calls the app layer.
 - Long work may return progress via existing app mechanisms; do not block the protocol on hour-long silence without a clear run/status model.
 - Remote Streamable HTTP, OAuth, resources, prompts, and live subscriptions are **optional later**. Do not expand the protocol surface until the backup/restore contract is solid and there is a real remote daemon need.

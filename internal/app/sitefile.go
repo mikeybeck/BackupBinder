@@ -7,10 +7,10 @@ import (
 	"strings"
 	"time"
 
-	"local-backup/internal/destination"
-	"local-backup/internal/fail"
-	"local-backup/internal/model"
-	"local-backup/internal/schedule"
+	"backupbinder/internal/destination"
+	"backupbinder/internal/fail"
+	"backupbinder/internal/model"
+	"backupbinder/internal/schedule"
 )
 
 // siteDocument is the hand-edited contract. Passwords and cloud keys are not fields.
@@ -30,6 +30,39 @@ type siteDocument struct {
 
 func (a *App) siteFile(id string) string {
 	return filepath.Join(a.Home, "sites", id+".json")
+}
+
+// RemoveSite drops the registry row, the site file, and this site's secret files.
+// The local restic repository is left in place.
+func (a *App) RemoveSite(siteID string) (string, error) {
+	site, err := a.DB.GetSite(siteID)
+	if err != nil {
+		return "", err
+	}
+	if err := a.refuseBusy(site.ID, ""); err != nil {
+		return "", err
+	}
+	if status, ok := a.ReadRestoreStatus(site.ID); ok && status.InProgress {
+		return "", fail.New("restore_busy", "A restore is already running for this site.")
+	}
+	repo := a.repoPath(site)
+	secrets := []string{a.databaseSecretPath(site.ID)}
+	for _, dest := range site.Destinations {
+		if dest.CredentialFile != "" {
+			secrets = append(secrets, dest.CredentialFile)
+		}
+	}
+	if err := os.Remove(a.siteFile(site.ID)); err != nil && !os.IsNotExist(err) {
+		return "", err
+	}
+	if err := a.DB.DeleteSite(site.ID); err != nil {
+		_ = a.saveSiteFile(site.ID)
+		return "", err
+	}
+	for _, path := range secrets {
+		_ = os.Remove(path)
+	}
+	return repo, nil
 }
 
 // saveSiteFile writes the site file and records that write as the site's updated time.

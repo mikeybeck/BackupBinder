@@ -9,9 +9,9 @@ import (
 	"strings"
 	"testing"
 
-	"local-backup/internal/app"
-	"local-backup/internal/fail"
-	"local-backup/internal/model"
+	"backupbinder/internal/app"
+	"backupbinder/internal/fail"
+	"backupbinder/internal/model"
 )
 
 func TestHandlersSaveSiteSettings(t *testing.T) {
@@ -126,7 +126,7 @@ func TestDestinationRemoveAndDisable(t *testing.T) {
 	if err := os.WriteFile(script, []byte(body), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	t.Setenv("LOCAL_BACKUP_RCLONE", script)
+	t.Setenv("BACKUPBINDER_RCLONE", script)
 
 	application, err := app.Open(t.TempDir())
 	if err != nil {
@@ -143,7 +143,7 @@ func TestDestinationRemoveAndDisable(t *testing.T) {
 		t.Fatal(err)
 	}
 	dest, err := application.AddDestination("notes", model.Destination{
-		Kind: "gdrive", Host: "gdrive", Path: "local-backup/notes", Enabled: true,
+		Kind: "gdrive", Host: "gdrive", Path: "backupbinder/notes", Enabled: true,
 	}, "", "")
 	if err != nil {
 		t.Fatal(err)
@@ -178,7 +178,7 @@ func TestDestinationSaveRejectsMissingHostInPlace(t *testing.T) {
 	if err := os.WriteFile(script, []byte(body), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	t.Setenv("LOCAL_BACKUP_RCLONE", script)
+	t.Setenv("BACKUPBINDER_RCLONE", script)
 
 	application, err := app.Open(t.TempDir())
 	if err != nil {
@@ -196,7 +196,7 @@ func TestDestinationSaveRejectsMissingHostInPlace(t *testing.T) {
 	}
 
 	resp := postForm(t, handler, "/sites/notes/destinations", url.Values{
-		"kind": {"gdrive"}, "path": {"local-backup/notes"}, "enabled": {"on"},
+		"kind": {"gdrive"}, "path": {"backupbinder/notes"}, "enabled": {"on"},
 	})
 	if resp.Code != http.StatusOK {
 		t.Fatalf("expected re-render %d", resp.Code)
@@ -228,7 +228,7 @@ func TestDestinationSaveKeepsFieldsOnError(t *testing.T) {
 	if err := os.WriteFile(script, []byte(body), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	t.Setenv("LOCAL_BACKUP_RCLONE", script)
+	t.Setenv("BACKUPBINDER_RCLONE", script)
 
 	application, err := app.Open(t.TempDir())
 	if err != nil {
@@ -246,7 +246,7 @@ func TestDestinationSaveKeepsFieldsOnError(t *testing.T) {
 	}
 
 	resp := postForm(t, handler, "/sites/notes/destinations", url.Values{
-		"kind": {"gdrive"}, "host": {"gdrive"}, "path": {"local-backup/notes"}, "enabled": {"on"},
+		"kind": {"gdrive"}, "host": {"gdrive"}, "path": {"backupbinder/notes"}, "enabled": {"on"},
 	})
 	if resp.Code != http.StatusOK {
 		t.Fatalf("expected re-render %d location %s", resp.Code, resp.Header().Get("Location"))
@@ -261,7 +261,7 @@ func TestDestinationSaveKeepsFieldsOnError(t *testing.T) {
 	if !strings.Contains(page, `id="dest-gdrive-host" name="host"`) || !strings.Contains(page, `value="gdrive" selected`) {
 		t.Fatal("host field was cleared")
 	}
-	if !strings.Contains(page, `id="dest-gdrive-path" name="path" value="local-backup/notes"`) {
+	if !strings.Contains(page, `id="dest-gdrive-path" name="path" value="backupbinder/notes"`) {
 		t.Fatal("path field was cleared")
 	}
 	if !strings.Contains(page, `value="gdrive" selected`) {

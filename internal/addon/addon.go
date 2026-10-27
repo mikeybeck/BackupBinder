@@ -12,8 +12,8 @@ import (
 	"strconv"
 	"strings"
 
-	"local-backup/internal/fail"
-	"local-backup/internal/model"
+	"backupbinder/internal/fail"
+	"backupbinder/internal/model"
 )
 
 //go:embed wordpress.json

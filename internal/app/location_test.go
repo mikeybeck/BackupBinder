@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"local-backup/internal/model"
+	"backupbinder/internal/model"
 )
 
 func TestSetLocationKeepsOneServer(t *testing.T) {

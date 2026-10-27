@@ -6,8 +6,8 @@ import (
 	"strings"
 	"testing"
 
-	"local-backup/internal/app"
-	"local-backup/internal/fail"
+	"backupbinder/internal/app"
+	"backupbinder/internal/fail"
 )
 
 func TestCatalogIncludesSetup(t *testing.T) {

@@ -12,9 +12,9 @@ import (
 	"strings"
 	"time"
 
-	"local-backup/internal/capture"
-	"local-backup/internal/fail"
-	"local-backup/internal/model"
+	"backupbinder/internal/capture"
+	"backupbinder/internal/fail"
+	"backupbinder/internal/model"
 )
 
 // SetLocation saves the one place this site's files are read from.
@@ -110,7 +110,7 @@ func estimateServer(loc model.Location) (SizeEstimate, error) {
 	if _, err := exec.LookPath("rsync"); err != nil {
 		return SizeEstimate{}, fail.New("step_failed", "rsync is not installed, so the server size cannot be checked.")
 	}
-	dest, err := os.MkdirTemp("", "local-backup-estimate-*")
+	dest, err := os.MkdirTemp("", "backupbinder-estimate-*")
 	if err != nil {
 		return SizeEstimate{}, err
 	}

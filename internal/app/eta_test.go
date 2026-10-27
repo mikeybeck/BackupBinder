@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"local-backup/internal/model"
+	"backupbinder/internal/model"
 )
 
 func TestEstimateTimingFromUploadLimit(t *testing.T) {

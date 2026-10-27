@@ -1,5 +1,5 @@
 ---
-name: Local backup
+name: BackupBinder
 description: Household binder UI for trustworthy local backups on this machine.
 colors:
   paper: "#f2efe8"
@@ -99,7 +99,7 @@ components:
     padding: "0.15rem 0.45rem"
 ---
 
-# Design System: Local backup
+# Design System: BackupBinder
 
 ## Overview
 

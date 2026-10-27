@@ -5,11 +5,11 @@ import (
 	"strings"
 	"time"
 
-	"local-backup/internal/app"
-	"local-backup/internal/destination"
-	"local-backup/internal/discover"
-	"local-backup/internal/fail"
-	"local-backup/internal/model"
+	"backupbinder/internal/app"
+	"backupbinder/internal/destination"
+	"backupbinder/internal/discover"
+	"backupbinder/internal/fail"
+	"backupbinder/internal/model"
 )
 
 // Flag is one CLI flag. The same name is the MCP argument name.
@@ -36,11 +36,12 @@ type Catalog struct {
 	Commands     []Command `json:"commands"`
 }
 
-const instructions = "Before backing up an existing site by name, call identify with the exact name the user used. If access.ask_user is true, ask the user how this machine reaches the site, then ask only for that option's fields. Do not back up a different local directory. If the user points at a directory or a server, call setup with that location, then ask only what next describes and call setup again. --path is a directory on this machine. A server is --host, --user, and --remote-path. Do not invent host, user, path, or keys. Do not pass a directory and a server together. SFTP uses the SSH keys already on this machine. Do not ask for an SSH password. --no-database, --remote none, --no-schedule, and --no-backup decline that step. Stop when phase is ready. A backup, schedule change, destination change, retention change, or database setting change also requires that site's id and root. If a tool returns phase needs_input, ask the user for each field in next.fields and call the tool again with their answers. Never print database passwords, access keys, or secret keys."
+const instructions = "A new site is only setup until phase is ready. An existing site is identify, then inspect_site. Call set_*, add_destination, create_backup, or restore_backup only when the user asked for that change. Before backing up an existing site by name, call identify with the exact name the user used. If access.ask_user is true, ask the user how this machine reaches the site, then ask only for that option's fields. Do not back up a different local directory. If the user points at a directory or a server, call setup with that location, then ask only what next describes and call setup again. When next.options is set, ask which one applies and send exactly one option. Do not send every field from every option. --path is a directory on this machine. A server is --host, --user, and --remote-path. Do not invent host, user, path, or keys. Do not pass a directory and a server together. SFTP uses the SSH keys already on this machine. Do not ask for an SSH password. When next.accept and next.decline are set, pass one of those flags on the next command. --no-database, --remote none, --no-schedule, and --no-backup decline that step. Include --id and --root from the result whenever the site exists. Stop when phase is ready. A backup, schedule change, destination change, retention change, or database setting change also requires that site's id and root. If a tool returns phase needs_input, ask the user for each field in next.fields and call the tool again with their answers. Never print database passwords, access keys, or secret keys. Run doctor to see whether restic, rclone, rsync, and ssh are installed. doctor runs even when restic is missing. create_backup blocks until the backup finishes unless --detach is set; then poll inspect_site last_run.progress and last_run.ok. run_scheduled is the cron command and blocks until due sites finish. The schedule line is not installed for you. test_restore and restore_backup block until the restore finishes unless --detach is set; then poll inspect_site restore."
 
 // Commands is the stable list. Tool is false for commands that do not return to the caller.
 var Commands = []Command{
 	{Name: "agent", Summary: "Print this catalog.", Tool: true},
+	{Name: "doctor", Summary: "Report the data home, restic, rclone, rsync, ssh, and the MCP config. Runs even when restic is missing. Does not install anything.", Tool: true},
 	{Name: "setup", Summary: "Walk through backup setup. --path is a directory on this machine. A server is --host, --user, and --remote-path. Each response says which decision is next. --remote-path is also the remote directory for a destination.", Tool: true, Flags: []Flag{
 		{Name: "path", Placeholder: "DIR", Description: "site directory"},
 		{Name: "name", Placeholder: "NAME", Description: "display name"},
@@ -71,7 +72,7 @@ var Commands = []Command{
 	{Name: "discover_site", Summary: "Propose a contract and write nothing.", Tool: true, Flags: []Flag{
 		{Name: "path", Placeholder: "DIR", Description: "site directory", Required: true},
 	}},
-	{Name: "register_site", Summary: "Save a discovered contract.", Tool: true, Flags: []Flag{
+	{Name: "register_site", Summary: "Save a discovered contract and continue in setup until phase is ready.", Tool: true, Flags: []Flag{
 		{Name: "path", Placeholder: "DIR", Description: "site directory", Required: true},
 		{Name: "name", Placeholder: "NAME", Description: "display name"},
 		{Name: "id", Placeholder: "ID", Description: "site id"},
@@ -80,16 +81,21 @@ var Commands = []Command{
 	{Name: "identify", Summary: "Exact match on id, name, or root. If access.ask_user is true, ask the user which access applies and then ask only for that option's fields. Do not invent values.", Tool: true, Flags: []Flag{
 		{Name: "query", Placeholder: "NAME", Description: "exact site id, display name, or root", Required: true},
 	}},
-	{Name: "inspect_site", Summary: "Read one site, its last run, and the cron line. Check root before acting.", Tool: true, Flags: []Flag{
+	{Name: "inspect_site", Summary: "Read one site, its last run, restore status, and the cron line. Check root before acting.", Tool: true, Flags: []Flag{
 		{Name: "id", Placeholder: "ID", Description: "site id", Required: true},
 	}},
-	{Name: "set_schedule", Summary: "Save a five-field cron schedule for the site whose id and root both match.", Tool: true, Flags: []Flag{
+	{Name: "set_name", Summary: "Change one saved setting. Set the display name for the site whose id and root both match. The id does not change.", Tool: true, Flags: []Flag{
 		{Name: "id", Placeholder: "ID", Description: "site id", Required: true},
 		{Name: "root", Placeholder: "DIR", Description: "exact root from identify", Required: true},
-		{Name: "cron", Placeholder: "EXPR", Description: "five cron fields"},
-		{Name: "enabled", Bool: true, Description: "run this schedule from run_scheduled"},
+		{Name: "name", Placeholder: "NAME", Description: "display name", Required: true},
 	}},
-	{Name: "set_location", Summary: "Choose the one place this site's files are read from. local reads --path on this machine. sftp copies one server into the local root before each backup. SSH keys already on this machine are used.", Tool: true, Flags: []Flag{
+	{Name: "set_schedule", Summary: "Change one saved setting. Save a five-field cron schedule for the site whose id and root both match. Omit --cron or --enabled to leave that saved value unchanged.", Tool: true, Flags: []Flag{
+		{Name: "id", Placeholder: "ID", Description: "site id", Required: true},
+		{Name: "root", Placeholder: "DIR", Description: "exact root from identify", Required: true},
+		{Name: "cron", Placeholder: "EXPR", Description: "five cron fields. Omit to leave the saved cron unchanged."},
+		{Name: "enabled", Bool: true, Description: "run this schedule from run_scheduled. Omit to leave the saved value unchanged."},
+	}},
+	{Name: "set_location", Summary: "Change one saved setting. Choose the one place this site's files are read from. local reads --path on this machine. sftp copies one server into the local root before each backup. SSH keys already on this machine are used.", Tool: true, Flags: []Flag{
 		{Name: "id", Placeholder: "ID", Description: "site id", Required: true},
 		{Name: "root", Placeholder: "DIR", Description: "exact root from identify", Required: true},
 		{Name: "kind", Placeholder: "local|sftp", Description: "where the files are read from", Required: true},
@@ -98,28 +104,28 @@ var Commands = []Command{
 		{Name: "user", Placeholder: "USER", Description: "SSH user when kind is sftp"},
 		{Name: "remote-path", Placeholder: "PATH", Description: "absolute path on the server when kind is sftp"},
 	}},
-	{Name: "set_adapter", Summary: "Re-read the site directory and save the matching addon. Keeps the schedule, the server, and destinations. Omit --adapter to use the match. --adapter files stores a file source only.", Tool: true, Flags: []Flag{
+	{Name: "set_adapter", Summary: "Change one saved setting. Re-read the site directory and save the matching addon. Keeps the schedule, the server, and destinations. Omit --adapter to use the match. --adapter files stores a file source only.", Tool: true, Flags: []Flag{
 		{Name: "id", Placeholder: "ID", Description: "site id", Required: true},
 		{Name: "root", Placeholder: "DIR", Description: "exact root from identify", Required: true},
 		{Name: "adapter", Placeholder: "NAME", Description: "addon id, or files. Omit to use the addon that matches the directory."},
 	}},
-	{Name: "set_database", Summary: "Choose whether each backup includes a database dump. Optionally set name, user, host, and a password saved under secrets. The password is never printed back.", Tool: true, Flags: []Flag{
+	{Name: "set_database", Summary: "Change one saved setting. Choose whether each backup includes a database dump. Optionally set name, user, host, and a password saved under secrets. The password is never printed back.", Tool: true, Flags: []Flag{
 		{Name: "id", Placeholder: "ID", Description: "site id", Required: true},
 		{Name: "root", Placeholder: "DIR", Description: "exact root from identify", Required: true},
-		{Name: "enabled", Bool: true, Description: "include a database dump; omit or false for files only"},
+		{Name: "enabled", Bool: true, Description: "include a database dump. Omit to leave the saved choice. Pass false for files only."},
 		{Name: "name", Placeholder: "NAME", Description: "database name"},
 		{Name: "user", Placeholder: "USER", Description: "database user"},
 		{Name: "host", Placeholder: "HOST", Description: "database host, host:port, or host:/socket"},
 		{Name: "password", Placeholder: "SECRET", Description: "database password; saved under secrets; not printed back"},
 		{Name: "prefer-config", Bool: true, Description: "clear a saved password and read the site config file instead"},
 	}},
-	{Name: "set_limits", Summary: "Cap restic repository traffic for the site whose id and root both match. Rates are KiB per second. 0 is unlimited. An omitted rate is left unchanged.", Tool: true, Flags: []Flag{
+	{Name: "set_limits", Summary: "Change one saved setting. Cap restic repository traffic for the site whose id and root both match. Rates are KiB per second. 0 is unlimited. An omitted rate is left unchanged.", Tool: true, Flags: []Flag{
 		{Name: "id", Placeholder: "ID", Description: "site id", Required: true},
 		{Name: "root", Placeholder: "DIR", Description: "exact root from identify", Required: true},
 		{Name: "limit-upload", Placeholder: "KIB", Description: "max upload rate in KiB/s; 0 is unlimited"},
 		{Name: "limit-download", Placeholder: "KIB", Description: "max download rate in KiB/s; 0 is unlimited"},
 	}},
-	{Name: "set_retention", Summary: "Set how many snapshots to keep for the site whose id and root both match. 0 skips that rule. An omitted count is left unchanged. All zeros keeps every snapshot. Saved rules apply immediately, and again after every backup.", Tool: true, Flags: []Flag{
+	{Name: "set_retention", Summary: "Change one saved setting. Set how many snapshots to keep for the site whose id and root both match. 0 skips that rule. An omitted count is left unchanged. All zeros keeps every snapshot. Saved rules apply immediately, and again after every backup.", Tool: true, Flags: []Flag{
 		{Name: "id", Placeholder: "ID", Description: "site id", Required: true},
 		{Name: "root", Placeholder: "DIR", Description: "exact root from identify", Required: true},
 		{Name: "keep-last", Placeholder: "N", Description: "newest snapshots to keep, at any time"},
@@ -129,40 +135,55 @@ var Commands = []Command{
 		{Name: "keep-monthly", Placeholder: "N", Description: "monthly snapshots to keep"},
 		{Name: "keep-yearly", Placeholder: "N", Description: "yearly snapshots to keep"},
 	}},
-	{Name: "apply_retention", Summary: "Forget and prune snapshots outside the saved rules, on this machine and on enabled destinations.", Tool: true, Flags: []Flag{
+	{Name: "apply_retention", Summary: "Change one saved setting. Forget and prune snapshots outside the saved rules, on this machine and on enabled destinations.", Tool: true, Flags: []Flag{
 		{Name: "id", Placeholder: "ID", Description: "site id", Required: true},
 		{Name: "root", Placeholder: "DIR", Description: "exact root from identify", Required: true},
 	}},
-	{Name: "add_destination", Summary: "Save a destination for the site whose id and root both match. Rclone remote names are checked against local rclone config when set. Enabled destinations are probed when saved; disabled ones are not contacted until enabled.", Tool: true, Flags: []Flag{
+	{Name: "add_destination", Summary: "Change one saved setting. Save a destination for the site whose id and root both match. Rclone remote names are checked against local rclone config when set. Enabled destinations are probed when saved; disabled ones are not contacted until enabled.", Tool: true, Flags: []Flag{
 		{Name: "id", Placeholder: "ID", Description: "site id", Required: true},
 		{Name: "root", Placeholder: "DIR", Description: "exact root from identify", Required: true},
 		{Name: "kind", Placeholder: "KIND", Description: "destination kind", Required: true},
-		{Name: "enabled", Bool: true, Description: "upload on the next backup"},
+		{Name: "enabled", Bool: true, Description: "upload on the next backup. Omit to save the destination disabled."},
 		{Name: "host", Placeholder: "HOST", Description: "SFTP host, or destination host/remote name"},
 		{Name: "user", Placeholder: "USER", Description: "SFTP user"},
 		{Name: "path", Placeholder: "PATH", Description: "SFTP path, disk path, or destination folder path"},
+		{Name: "remote-path", Placeholder: "PATH", Description: "Same folder as --path. Use either flag."},
 		{Name: "bucket", Placeholder: "BUCKET", Description: "bucket"},
 		{Name: "prefix", Placeholder: "PREFIX", Description: "key prefix"},
 		{Name: "endpoint", Placeholder: "HOST", Description: "S3 endpoint hostname"},
 		{Name: "access-key", Placeholder: "KEY", Description: "S3 access key or B2 account id; not printed back"},
 		{Name: "secret-key", Placeholder: "SECRET", Description: "S3 secret or B2 application key; not printed back"},
 	}},
-	{Name: "set_destination", Summary: "Enable or disable a saved destination for the site whose id and root both match. Enabling probes reachability. The local restic repository cannot be disabled.", Tool: true, Flags: []Flag{
+	{Name: "set_destination", Summary: "Change one saved setting. Update a saved destination for the site whose id and root both match. Omitted fields stay as stored. The destination id does not change. Enabling probes reachability. The local restic repository cannot be edited or disabled.", Tool: true, Flags: []Flag{
 		{Name: "id", Placeholder: "ID", Description: "site id", Required: true},
 		{Name: "root", Placeholder: "DIR", Description: "exact root from identify", Required: true},
 		{Name: "destination", Placeholder: "DEST", Description: "destination id from inspect_site", Required: true},
-		{Name: "enabled", Bool: true, Description: "upload on the next backup"},
+		{Name: "enabled", Bool: true, Description: "upload on the next backup. Omit to leave the saved value unchanged."},
+		{Name: "host", Placeholder: "HOST", Description: "SFTP host, or destination host/remote name"},
+		{Name: "user", Placeholder: "USER", Description: "SFTP user"},
+		{Name: "path", Placeholder: "PATH", Description: "SFTP path, disk path, or destination folder path"},
+		{Name: "remote-path", Placeholder: "PATH", Description: "Same folder as --path. Use either flag."},
+		{Name: "bucket", Placeholder: "BUCKET", Description: "bucket"},
+		{Name: "prefix", Placeholder: "PREFIX", Description: "key prefix"},
+		{Name: "endpoint", Placeholder: "HOST", Description: "S3 endpoint hostname"},
+		{Name: "access-key", Placeholder: "KEY", Description: "S3 access key or B2 account id; not printed back"},
+		{Name: "secret-key", Placeholder: "SECRET", Description: "S3 secret or B2 application key; not printed back"},
 	}},
-	{Name: "remove_destination", Summary: "Remove a saved destination for the site whose id and root both match. The local restic repository cannot be removed.", Tool: true, Flags: []Flag{
+	{Name: "remove_site", Summary: "Change one saved setting. Remove a site whose id and root both match. Drops the registry row and this site's secret files. Leaves the local restic repository in place.", Tool: true, Flags: []Flag{
+		{Name: "id", Placeholder: "ID", Description: "site id", Required: true},
+		{Name: "root", Placeholder: "DIR", Description: "exact root from identify", Required: true},
+	}},
+	{Name: "remove_destination", Summary: "Change one saved setting. Remove a saved destination for the site whose id and root both match. The local restic repository cannot be removed.", Tool: true, Flags: []Flag{
 		{Name: "id", Placeholder: "ID", Description: "site id", Required: true},
 		{Name: "root", Placeholder: "DIR", Description: "exact root from identify", Required: true},
 		{Name: "destination", Placeholder: "DEST", Description: "destination id from inspect_site", Required: true},
 	}},
-	{Name: "create_backup", Summary: "Back up the site whose id and root both match. Refuses a different root.", Tool: true, Flags: []Flag{
+	{Name: "create_backup", Summary: "Back up the site whose id and root both match. Refuses a different root. Without --detach the call blocks until the manifest is ready. With --detach, poll inspect_site last_run.progress and last_run.ok.", Tool: true, Flags: []Flag{
 		{Name: "id", Placeholder: "ID", Description: "site id", Required: true},
 		{Name: "root", Placeholder: "DIR", Description: "exact root from identify", Required: true},
+		{Name: "detach", Bool: true, Description: "Return immediately with a run id. Poll inspect_site last_run.progress and last_run.ok."},
 	}},
-	{Name: "verify_backup", Summary: "Check a snapshot.", Tool: true, Flags: []Flag{
+	{Name: "verify_backup", Summary: "Read the stored data and check that the snapshot file list matches the manifest.", Tool: true, Flags: []Flag{
 		{Name: "id", Placeholder: "ID", Description: "site id", Required: true},
 		{Name: "run", Placeholder: "RUN", Description: "run id"},
 	}},
@@ -178,19 +199,21 @@ var Commands = []Command{
 		{Name: "id", Placeholder: "ID", Description: "site id", Required: true},
 		{Name: "run", Placeholder: "RUN", Description: "run id"},
 	}},
-	{Name: "test_restore", Summary: "Restore into an empty scratch directory and record confidence. Requires the exact root.", Tool: true, Flags: []Flag{
+	{Name: "test_restore", Summary: "Restore into an empty scratch directory, compare it to the manifest, and record confidence. Requires the exact root. Omit --scratch to create a new empty directory. Without --detach the call blocks until the check finishes. With --detach, poll inspect_site restore.", Tool: true, Flags: []Flag{
 		{Name: "id", Placeholder: "ID", Description: "site id", Required: true},
 		{Name: "root", Placeholder: "DIR", Description: "exact root from identify", Required: true},
 		{Name: "run", Placeholder: "RUN", Description: "run id"},
-		{Name: "scratch", Placeholder: "DIR", Description: "empty directory outside the live site"},
+		{Name: "scratch", Placeholder: "DIR", Description: "empty directory outside the live site. Omit to create one under the data home."},
+		{Name: "detach", Bool: true, Description: "Return immediately. Poll inspect_site restore.in_progress, restore.ok, restore.scratch, and restore.error."},
 	}},
-	{Name: "restore_backup", Summary: "Restore into an empty scratch directory. Requires the exact root.", Tool: true, Flags: []Flag{
+	{Name: "restore_backup", Summary: "Restore into an empty scratch directory. Requires the exact root. Omit --scratch to create a new empty directory. Without --detach the call blocks until the restore finishes. With --detach, poll inspect_site restore.", Tool: true, Flags: []Flag{
 		{Name: "id", Placeholder: "ID", Description: "site id", Required: true},
 		{Name: "root", Placeholder: "DIR", Description: "exact root from identify", Required: true},
 		{Name: "run", Placeholder: "RUN", Description: "run id"},
-		{Name: "scratch", Placeholder: "DIR", Description: "empty directory outside the live site"},
+		{Name: "scratch", Placeholder: "DIR", Description: "empty directory outside the live site. Omit to create one under the data home."},
+		{Name: "detach", Bool: true, Description: "Return immediately. Poll inspect_site restore.in_progress, restore.ok, restore.scratch, and restore.error."},
 	}},
-	{Name: "run_scheduled", Summary: "Run sites whose schedule is due. A system cron calls this.", Tool: true},
+	{Name: "run_scheduled", Summary: "Run sites whose schedule is due. A system cron calls this. The call blocks until every due site finishes. It does not install the cron line.", Tool: true},
 	{Name: "serve", Summary: "Serve the localhost UI. This command does not return.", Flags: []Flag{
 		{Name: "host", Placeholder: "127.0.0.1", Description: "loopback address"},
 		{Name: "port", Placeholder: "47831", Description: "port"},
@@ -198,7 +221,7 @@ var Commands = []Command{
 	{Name: "mcp", Summary: "Speak MCP over stdio so an agent can call these commands as tools."},
 }
 
-// CatalogDocument is the JSON from `local-backup agent`.
+// CatalogDocument is the JSON from `backupbinder agent`.
 func CatalogDocument() Catalog {
 	ids := destination.IDs()
 	commands := make([]Command, len(Commands))
@@ -210,8 +233,14 @@ func CatalogDocument() Catalog {
 		flags := make([]Flag, len(cmd.Flags))
 		copy(flags, cmd.Flags)
 		for j := range flags {
-			if (flags[j].Name == "remote" || flags[j].Name == "kind") && flags[j].Placeholder == "KIND" {
+			switch {
+			case flags[j].Name == "remote" && flags[j].Placeholder == "KIND":
+				flags[j].Placeholder = "none|" + ids
+			case flags[j].Name == "kind" && flags[j].Placeholder == "KIND":
 				flags[j].Placeholder = ids
+			}
+			if note := destination.AppliesTo(flags[j].Name); note != "" {
+				flags[j].Description += " " + note
 			}
 		}
 		commands[i].Flags = flags
@@ -222,19 +251,19 @@ func CatalogDocument() Catalog {
 // Usage is the text printed when the command is missing.
 func Usage() string {
 	var b strings.Builder
-	b.WriteString("local-backup is a local site backup tool. Commands print JSON.\n\n")
+	b.WriteString("backupbinder is a local site backup tool. Commands print JSON.\n\n")
 	for _, cmd := range Commands {
 		b.WriteString(cmd.usageLine())
 		b.WriteByte('\n')
 	}
-	b.WriteString("\nData lives in ./var or --home / LOCAL_BACKUP_HOME.\n")
-	b.WriteString("Run local-backup agent for the machine-readable catalog.\n")
+	b.WriteString("\nData lives in ./var or --home / BACKUPBINDER_HOME.\n")
+	b.WriteString("Run backupbinder agent for the machine-readable catalog.\n")
 	return b.String()
 }
 
 func (c Command) usageLine() string {
 	var b strings.Builder
-	b.WriteString("  local-backup ")
+	b.WriteString("  backupbinder ")
 	b.WriteString(c.Name)
 	for _, f := range c.Flags {
 		b.WriteByte(' ')
@@ -279,7 +308,7 @@ func Tools() []Command {
 func Execute(application *app.App, name string, args map[string]any) (any, error) {
 	cmd, ok := Lookup(name)
 	if !ok || name == "mcp" || name == "serve" {
-		return nil, fail.New("bad_command", "Unknown command. Run local-backup agent.")
+		return nil, fail.New("bad_command", "Unknown command. Run backupbinder agent.")
 	}
 	if application != nil {
 		if err := application.ReloadSites(); err != nil {
@@ -297,22 +326,41 @@ func Execute(application *app.App, name string, args map[string]any) (any, error
 	switch name {
 	case "agent":
 		return CatalogDocument(), nil
+	case "doctor":
+		home := ""
+		if application != nil {
+			home = application.Home
+		}
+		return app.Doctor(home), nil
 	case "discover_site":
 		return discover.Site(asString(args, "path"), "", "")
 	case "register_site":
 		id := asString(args, "id")
-		return application.Register(asString(args, "path"), asString(args, "name"), id, id != "")
+		return application.Setup(app.SetupInput{Path: asString(args, "path"), Name: asString(args, "name"), ID: id})
 	case "list_sites":
 		return application.ListSites()
 	case "identify":
 		return application.Identify(asString(args, "query"))
 	case "inspect_site":
 		return application.Inspect(asString(args, "id"))
+	case "set_name":
+		if _, err := application.ConfirmSite(asString(args, "id"), asString(args, "root")); err != nil {
+			return nil, err
+		}
+		site, unchanged, err := application.SetName(asString(args, "id"), asString(args, "name"))
+		if err != nil {
+			return nil, err
+		}
+		out := map[string]any{"ok": true, "id": site.ID, "name": site.Name, "root": site.Root}
+		if unchanged {
+			out["unchanged"] = true
+		}
+		return out, nil
 	case "set_schedule":
 		if _, err := application.ConfirmSite(asString(args, "id"), asString(args, "root")); err != nil {
 			return nil, err
 		}
-		schedule, err := application.SetSchedule(asString(args, "id"), asString(args, "cron"), asBool(args, "enabled"))
+		schedule, err := application.SetSchedule(asString(args, "id"), asString(args, "cron"), asBoolPtr(args, "enabled"))
 		if err != nil {
 			return nil, err
 		}
@@ -349,7 +397,7 @@ func Execute(application *app.App, name string, args map[string]any) (any, error
 			return nil, err
 		}
 		site, err := application.SetDatabase(asString(args, "id"), app.DatabaseInput{
-			Enabled:      asBool(args, "enabled"),
+			Enabled:      asBoolPtr(args, "enabled"),
 			Name:         asString(args, "name"),
 			User:         asString(args, "user"),
 			Host:         asString(args, "host"),
@@ -420,9 +468,16 @@ func Execute(application *app.App, name string, args map[string]any) (any, error
 		if _, err := application.ConfirmSite(asString(args, "id"), asString(args, "root")); err != nil {
 			return nil, err
 		}
+		path := asString(args, "path")
+		if path == "" {
+			path = asString(args, "remote-path")
+		}
+		if asString(args, "path") != "" && asString(args, "remote-path") != "" && asString(args, "path") != asString(args, "remote-path") {
+			return nil, fail.New("bad_destination", "Pass --path or --remote-path, not two different folders.")
+		}
 		dest, err := application.AddDestination(asString(args, "id"), model.Destination{
 			Kind: asString(args, "kind"), Enabled: asBool(args, "enabled"),
-			Host: asString(args, "host"), User: asString(args, "user"), Path: asString(args, "path"),
+			Host: asString(args, "host"), User: asString(args, "user"), Path: path,
 			Bucket: asString(args, "bucket"), Prefix: asString(args, "prefix"), Endpoint: asString(args, "endpoint"),
 		}, asString(args, "access-key"), asString(args, "secret-key"))
 		if err != nil {
@@ -433,11 +488,39 @@ func Execute(application *app.App, name string, args map[string]any) (any, error
 		if _, err := application.ConfirmSite(asString(args, "id"), asString(args, "root")); err != nil {
 			return nil, err
 		}
-		dest, err := application.SetDestinationEnabled(asString(args, "id"), asString(args, "destination"), asBool(args, "enabled"))
+		patch, changed, err := destinationPatch(args)
+		if err != nil {
+			return nil, err
+		}
+		if !changed {
+			site, err := application.DB.GetSite(asString(args, "id"))
+			if err != nil {
+				return nil, err
+			}
+			for _, dest := range site.Destinations {
+				if dest.ID == asString(args, "destination") {
+					return map[string]any{"ok": true, "destination": dest, "unchanged": true, "note": "Pass a field to change, or --enabled true or --enabled false. Omitted values were left as stored."}, nil
+				}
+			}
+			return nil, fail.New("bad_destination", "Destination "+asString(args, "destination")+" was not found on this site.")
+		}
+		dest, err := application.SetDestination(asString(args, "id"), asString(args, "destination"), patch)
 		if err != nil {
 			return nil, err
 		}
 		return map[string]any{"ok": true, "destination": dest}, nil
+	case "remove_site":
+		if _, err := application.ConfirmSite(asString(args, "id"), asString(args, "root")); err != nil {
+			return nil, err
+		}
+		repo, err := application.RemoveSite(asString(args, "id"))
+		if err != nil {
+			return nil, err
+		}
+		return map[string]any{
+			"ok": true, "removed": asString(args, "id"), "id": asString(args, "id"), "repo": repo,
+			"note": "The local restic repository was left at " + repo + ". A later site with this id uses that repository.",
+		}, nil
 	case "remove_destination":
 		if _, err := application.ConfirmSite(asString(args, "id"), asString(args, "root")); err != nil {
 			return nil, err
@@ -449,6 +532,16 @@ func Execute(application *app.App, name string, args map[string]any) (any, error
 	case "create_backup":
 		if _, err := application.ConfirmSite(asString(args, "id"), asString(args, "root")); err != nil {
 			return nil, err
+		}
+		if asBool(args, "detach") {
+			runID, err := application.StartBackupDetached(asString(args, "id"))
+			if err != nil {
+				return nil, err
+			}
+			return map[string]any{
+				"ok": true, "run_id": runID, "in_progress": true,
+				"next": "Poll inspect_site --id " + asString(args, "id") + ". Read last_run.progress while the backup runs and last_run.ok when it finishes.",
+			}, nil
 		}
 		return application.CreateBackup(asString(args, "id"))
 	case "verify_backup":
@@ -463,10 +556,16 @@ func Execute(application *app.App, name string, args map[string]any) (any, error
 		if _, err := application.ConfirmSite(asString(args, "id"), asString(args, "root")); err != nil {
 			return nil, err
 		}
+		if asBool(args, "detach") {
+			return detachRestore(application, "test_restore", args)
+		}
 		return application.TestRestore(asString(args, "id"), asString(args, "run"), asString(args, "scratch"))
 	case "restore_backup":
 		if _, err := application.ConfirmSite(asString(args, "id"), asString(args, "root")); err != nil {
 			return nil, err
+		}
+		if asBool(args, "detach") {
+			return detachRestore(application, "restore_backup", args)
 		}
 		return application.RestoreBackup(asString(args, "id"), asString(args, "run"), asString(args, "scratch"))
 	case "run_scheduled":
@@ -488,6 +587,7 @@ func Execute(application *app.App, name string, args map[string]any) (any, error
 			DBPassword: asString(args, "db-password"),
 			Remote:     asString(args, "remote"),
 			Enabled:    asBool(args, "enabled"),
+			EnabledSet: argSet(args, "enabled"),
 			Host:       asString(args, "host"),
 			User:       asString(args, "user"),
 			RemotePath: asString(args, "remote-path"),
@@ -498,8 +598,51 @@ func Execute(application *app.App, name string, args map[string]any) (any, error
 			SecretKey:  asString(args, "secret-key"),
 		})
 	default:
-		return nil, fail.New("bad_command", "Unknown command. Run local-backup agent.")
+		return nil, fail.New("bad_command", "Unknown command. Run backupbinder agent.")
 	}
+}
+
+func destinationPatch(args map[string]any) (app.DestinationPatch, bool, error) {
+	if argSet(args, "path") && argSet(args, "remote-path") && asString(args, "path") != asString(args, "remote-path") {
+		return app.DestinationPatch{}, false, fail.New("bad_destination", "Pass --path or --remote-path, not two different folders.")
+	}
+	patch := app.DestinationPatch{Enabled: asBoolPtr(args, "enabled")}
+	changed := patch.Enabled != nil
+	assign := func(flag string, dest **string) {
+		if !argSet(args, flag) {
+			return
+		}
+		value := asString(args, flag)
+		*dest = &value
+		changed = true
+	}
+	if argSet(args, "path") {
+		assign("path", &patch.Path)
+	} else {
+		assign("remote-path", &patch.Path)
+	}
+	assign("host", &patch.Host)
+	assign("user", &patch.User)
+	assign("bucket", &patch.Bucket)
+	assign("prefix", &patch.Prefix)
+	assign("endpoint", &patch.Endpoint)
+	if argSet(args, "access-key") || argSet(args, "secret-key") {
+		patch.KeysSet = true
+		patch.AccessKey = asString(args, "access-key")
+		patch.SecretKey = asString(args, "secret-key")
+		changed = true
+	}
+	return patch, changed, nil
+}
+
+func detachRestore(application *app.App, command string, args map[string]any) (any, error) {
+	if err := application.StartRestoreDetached(asString(args, "id"), command, asString(args, "run"), asString(args, "scratch")); err != nil {
+		return nil, err
+	}
+	return map[string]any{
+		"ok": true, "in_progress": true,
+		"next": "Poll inspect_site --id " + asString(args, "id") + ". Read restore.in_progress while it runs, then restore.ok, restore.scratch, and restore.error.",
+	}, nil
 }
 
 func retentionPolicy(current model.Retention, args map[string]any) (model.Retention, bool, error) {

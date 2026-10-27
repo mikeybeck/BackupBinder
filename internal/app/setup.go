@@ -5,10 +5,10 @@ import (
 	"path/filepath"
 	"strings"
 
-	"local-backup/internal/destination"
-	"local-backup/internal/discover"
-	"local-backup/internal/fail"
-	"local-backup/internal/model"
+	"backupbinder/internal/destination"
+	"backupbinder/internal/discover"
+	"backupbinder/internal/fail"
+	"backupbinder/internal/model"
 )
 
 const defaultCron = "15 3 * * *"
@@ -43,6 +43,9 @@ type SetupInput struct {
 	Endpoint   string
 	AccessKey  string
 	SecretKey  string
+	// EnabledSet is true when the caller passed --enabled. An omitted flag must not
+	// be treated as "turn this off".
+	EnabledSet bool
 }
 
 // SetupResult is the next step for an agent. Secrets are not included.
@@ -57,6 +60,8 @@ type SetupResult struct {
 	Destinations       []SetupDest     `json:"destinations,omitempty"`
 	Setup              []string        `json:"setup,omitempty"`
 	Config             string          `json:"config,omitempty"`
+	Reused             bool            `json:"reused,omitempty"`
+	Note               string          `json:"note,omitempty"`
 	Next               *SetupNext      `json:"next"`
 }
 
@@ -74,13 +79,23 @@ type SetupDest struct {
 }
 
 type SetupNext struct {
-	Step    string   `json:"step,omitempty"`
-	Command string   `json:"command"`
-	Kind    string   `json:"kind,omitempty"`
-	Fields  []string `json:"fields,omitempty"`
-	Cron    string   `json:"cron,omitempty"`
-	Confirm bool     `json:"confirm,omitempty"`
-	Reason  string   `json:"reason,omitempty"`
+	Step    string        `json:"step,omitempty"`
+	Command string        `json:"command"`
+	Kind    string        `json:"kind,omitempty"`
+	Fields  []string      `json:"fields,omitempty"`
+	Accept  string        `json:"accept,omitempty"`
+	Decline string        `json:"decline,omitempty"`
+	Options []SetupOption `json:"options,omitempty"`
+	Cron    string        `json:"cron,omitempty"`
+	Confirm bool          `json:"confirm,omitempty"`
+	Reason  string        `json:"reason,omitempty"`
+}
+
+// SetupOption is one location choice. The caller sends exactly one option's fields.
+type SetupOption struct {
+	Kind   string   `json:"kind"`
+	Fields []string `json:"fields"`
+	Ask    string   `json:"ask"`
 }
 
 // Setup registers a site when given a new path or server, then reports the next open decision.
@@ -112,6 +127,11 @@ func (a *App) Setup(in SetupInput) (SetupResult, error) {
 	if err := a.confirmSetup(site, in, created); err != nil {
 		return SetupResult{}, err
 	}
+	if !created {
+		if err := rejectClosed(site, in); err != nil {
+			return SetupResult{}, err
+		}
+	}
 	before := append([]string{}, site.Setup...)
 	missing, err := a.applySetup(&site, in, created)
 	if err != nil {
@@ -135,9 +155,9 @@ func (a *App) Setup(in SetupInput) (SetupResult, error) {
 		result.Next = missing
 		result.Setup = site.Setup
 		result.Config = a.siteFile(site.ID)
-		return result, nil
+		return noteReuse(result, site, in, created), nil
 	}
-	return a.setupNext(site), nil
+	return noteReuse(a.setupNext(site), site, in, created), nil
 }
 
 func normalizeSetup(in SetupInput) SetupInput {
@@ -168,8 +188,8 @@ func setupEarly(in SetupInput) (SetupResult, bool) {
 		return SetupResult{
 			OK: true, Phase: "needs_input",
 			Next: &SetupNext{
-				Step: "location", Command: "setup", Fields: []string{"path", "host", "user", "remote-path"},
-				Reason: "Pass a directory or a server, not both.",
+				Step: "location", Command: "setup", Options: locationOptions(),
+				Reason: "Pass a directory or a server, not both. Send exactly one option.",
 			},
 		}, true
 	}
@@ -410,7 +430,7 @@ func (a *App) settleDatabase(site *model.Site, in SetupInput) (*SetupNext, error
 	}
 	pending := dropStep(site.Setup, "database")
 	if in.NoDatabase {
-		saved, err := a.SetDatabase(site.ID, DatabaseInput{Enabled: false})
+		saved, err := a.SetDatabase(site.ID, DatabaseInput{Enabled: boolPtr(false)})
 		if err != nil {
 			return nil, err
 		}
@@ -441,13 +461,13 @@ func (a *App) settleDatabase(site *model.Site, in SetupInput) (*SetupNext, error
 		if host == "" {
 			fields = append(fields, "db-host")
 		}
-		return &SetupNext{
+		return withSite(*site, SetupNext{
 			Step: "database", Command: "setup", Fields: fields,
-			Reason: "A database dump needs a name, user, and host. Leave the password blank when the site config already has one.",
-		}, nil
+			Reason: "A database dump needs a name, user, and host. Leave the password blank when the site config already has one. Do not print the password.",
+		}), nil
 	}
 	saved, err := a.SetDatabase(site.ID, DatabaseInput{
-		Enabled: true, Name: in.DBName, User: in.DBUser, Host: in.DBHost, Password: in.DBPassword,
+		Enabled: boolPtr(true), Name: in.DBName, User: in.DBUser, Host: in.DBHost, Password: in.DBPassword,
 	})
 	if err != nil {
 		return nil, err
@@ -469,7 +489,11 @@ func (a *App) settleDestination(site *model.Site, in SetupInput) (*SetupNext, er
 		return nil, nil
 	}
 	if missing := remoteMissing(in); len(missing) > 0 {
-		return &SetupNext{Step: "destination", Command: "setup", Kind: in.Remote, Fields: missing, Reason: remoteReason(in.Remote)}, nil
+		next := SetupNext{Step: "destination", Command: "setup", Fields: missing, Reason: remoteReason(in.Remote)}
+		if _, err := destination.ByID(in.Remote); err == nil {
+			next.Kind = in.Remote
+		}
+		return withSite(*site, next), nil
 	}
 	pending := dropStep(site.Setup, "destination")
 	if _, err := a.AddDestination(site.ID, model.Destination{
@@ -505,7 +529,8 @@ func (a *App) settleSchedule(site *model.Site, in SetupInput) error {
 		cron = site.Schedule.Cron
 	}
 	pending := dropStep(site.Setup, "schedule")
-	if _, err := a.SetSchedule(site.ID, cron, in.Schedule); err != nil {
+	enabled := in.Schedule
+	if _, err := a.SetSchedule(site.ID, cron, &enabled); err != nil {
 		return err
 	}
 	saved, err := a.DB.GetSite(site.ID)
@@ -577,36 +602,147 @@ func (a *App) setupNext(site model.Site) SetupResult {
 		result.Phase = "ready"
 	case "location":
 		result.Phase = "needs_input"
-		result.Next = &SetupNext{Step: "location", Command: "setup", Fields: []string{"path"}, Reason: "Pass --path for a directory on this machine, or --host, --user, and --remote-path for a server. Do not invent values."}
+		result.Next = withSite(site, SetupNext{
+			Step: "location", Command: "setup", Options: locationOptions(),
+			Reason: "Send exactly one option. Pass --path for a directory on this machine, or --host, --user, and --remote-path for a server. Do not invent values.",
+		})
 	case "name":
 		result.Phase = "confirm"
-		result.Next = &SetupNext{Step: "name", Command: "setup", Fields: []string{"name"}, Confirm: true, Reason: "The proposed name is " + site.Name + ". Pass --name to keep it or to change it."}
+		result.Next = withSite(site, SetupNext{
+			Step: "name", Command: "setup", Fields: []string{"name"}, Accept: "name", Confirm: true,
+			Reason: "The proposed name is " + site.Name + ". Pass --name " + site.Name + " to keep it, or --name with a different name to change it.",
+		})
 	case "database":
 		result.Phase = "confirm"
-		result.Next = &SetupNext{Step: "database", Command: "setup", Fields: []string{"database"}, Confirm: true, Reason: databasePrompt(a, site)}
+		result.Next = withSite(site, SetupNext{
+			Step: "database", Command: "setup", Fields: []string{"database"}, Accept: "database", Decline: "no-database", Confirm: true,
+			Reason: databasePrompt(a, site),
+		})
 	case "destination":
 		result.Phase = "confirm"
-		result.Next = &SetupNext{
+		result.Next = withSite(site, SetupNext{
 			Step: "destination", Command: "setup", Fields: []string{"remote"}, Confirm: true,
-			Reason: "Finished archives stay on this machine unless you add a destination. Pass --remote none to keep them here, or --remote with one of " + strings.ReplaceAll(destination.IDs(), "|", ", ") + ".",
-		}
+			Reason: destinationConfirmReason(site),
+		})
 	case "schedule":
 		result.Phase = "confirm"
-		result.Next = &SetupNext{
-			Step: "schedule", Command: "setup", Cron: defaultCron, Confirm: true,
-			Reason: "Pass --schedule to enable " + defaultCron + ", or --no-schedule to leave the schedule off. A system cron must run run_scheduled every minute.",
-		}
+		result.Next = withSite(site, SetupNext{
+			Step: "schedule", Command: "setup", Fields: []string{"schedule"}, Accept: "schedule", Decline: "no-schedule", Cron: defaultCron, Confirm: true,
+			Reason: "Pass --schedule to enable " + defaultCron + ", or --no-schedule to leave the schedule off. A system cron must run this every minute. It is not installed: " + a.scheduleLine() + ".",
+		})
 	case "backup":
 		result.Phase = "confirm"
-		result.Next = &SetupNext{Step: "backup", Command: "create_backup", Confirm: true, Reason: "Pass --backup to take the first backup, or --no-backup to finish without one."}
+		result.Next = withSite(site, SetupNext{
+			Step: "backup", Command: "setup", Fields: []string{"backup"}, Accept: "backup", Decline: "no-backup", Confirm: true,
+			Reason: "Pass --backup to take the first backup, or --no-backup to finish without one.",
+		})
 	}
 	return result
+}
+
+func withSite(site model.Site, next SetupNext) *SetupNext {
+	if site.ID == "" {
+		return &next
+	}
+	fields := []string{"id", "root"}
+	for _, field := range next.Fields {
+		if field != "id" && field != "root" {
+			fields = append(fields, field)
+		}
+	}
+	next.Fields = fields
+	if next.Reason != "" && !strings.Contains(next.Reason, "--root "+site.Root) {
+		next.Reason = strings.TrimSpace(next.Reason) + " Include --id " + site.ID + " and --root " + site.Root + "."
+	}
+	return &next
+}
+
+func locationOptions() []SetupOption {
+	return []SetupOption{
+		{Kind: "local_directory", Fields: []string{"path"}, Ask: "Ask for the directory on this machine. Send this option only."},
+		{Kind: "sftp", Fields: []string{"host", "user", "remote-path"}, Ask: "Ask for the SSH host, the user, and the absolute path on the server. Do not ask for a password. Send this option only."},
+	}
+}
+
+func destinationConfirmReason(site model.Site) string {
+	reason := "Finished archives stay on this machine unless you add a destination. Pass --remote none to keep them here, or --remote with one of " + strings.ReplaceAll(destination.IDs(), "|", ", ") + ". Upload happens only when you also pass --enabled."
+	for _, dest := range site.Destinations {
+		if dest.Kind == "local_restic" {
+			continue
+		}
+		if dest.Enabled {
+			reason += " " + dest.ID + " is saved and enabled."
+			continue
+		}
+		reason += " " + dest.ID + " is saved but disabled. Call set_destination --id " + site.ID + " --root " + site.Root + " --destination " + dest.ID + " --enabled true to upload."
+	}
+	return reason
+}
+
+func noteReuse(result SetupResult, site model.Site, in SetupInput, created bool) SetupResult {
+	if created || in.Path == "" || site.Root == "" {
+		return result
+	}
+	if filepath.Clean(in.Path) != filepath.Clean(site.Root) {
+		return result
+	}
+	result.Reused = true
+	if in.ID != "" && in.ID != site.ID {
+		result.Note = "The requested id " + in.ID + " was not registered. This directory is already " + site.ID + " at " + site.Root + "."
+	}
+	return result
+}
+
+func rejectClosed(site model.Site, in SetupInput) error {
+	if in.Step != "" {
+		return nil
+	}
+	id, root := site.ID, site.Root
+	if !hasStep(site, "location") && locationChange(site, in) {
+		return fail.New("bad_command", "The location is already saved. Call set_location --id "+id+" --root "+root+" --kind local --path DIR, or --kind sftp --host HOST --user USER --remote-path PATH.")
+	}
+	if !hasStep(site, "name") && in.Name != "" && in.Name != site.Name {
+		return fail.New("bad_command", "The name is already "+site.Name+". Call set_name --id "+id+" --root "+root+" --name NAME. The id stays "+id+".")
+	}
+	if !hasStep(site, "database") && databaseChange(in) {
+		return fail.New("bad_command", "The database setting is already saved. Call set_database --id "+id+" --root "+root+" --enabled true --name NAME --user USER --host HOST, or --enabled false for files only. Do not print the password.")
+	}
+	if !hasStep(site, "destination") && in.Remote != "" {
+		return fail.New("bad_command", "The destination step is already closed. Call add_destination --id "+id+" --root "+root+" --kind "+in.Remote+".")
+	}
+	if !hasStep(site, "destination") && in.EnabledSet && in.Remote == "" {
+		return fail.New("bad_command", "Upload is changed with set_destination. Call inspect_site --id "+id+", then set_destination --id "+id+" --root "+root+" --destination DEST --enabled true.")
+	}
+	if !hasStep(site, "schedule") && (in.Schedule || in.NoSchedule || in.Cron != "") {
+		return fail.New("bad_command", "The schedule is already saved. Call set_schedule --id "+id+" --root "+root+" --cron EXPR --enabled true, or --enabled false to turn it off.")
+	}
+	if !hasStep(site, "backup") && (in.Backup || in.NoBackup) {
+		return fail.New("bad_command", "Setup already finished the backup step. Call create_backup --id "+id+" --root "+root+" to take another backup.")
+	}
+	return nil
+}
+
+func locationChange(site model.Site, in SetupInput) bool {
+	if in.Remote != "" {
+		return false
+	}
+	if in.Host != "" || in.User != "" || in.RemotePath != "" {
+		return true
+	}
+	if in.Path == "" {
+		return false
+	}
+	return filepath.Clean(in.Path) != filepath.Clean(site.Root)
+}
+
+func databaseChange(in SetupInput) bool {
+	return in.Database || in.NoDatabase || in.DBName != "" || in.DBUser != "" || in.DBHost != "" || in.DBPassword != ""
 }
 
 func databasePrompt(a *App, site model.Site) string {
 	db := model.DatabaseSource(site)
 	if db == nil && site.Location.Kind == "sftp" {
-		return "No database was detected yet. The site type is read after the first copy. Pass --database with --db-name, --db-user, and --db-host to include a dump now, or --no-database for files only."
+		return "No database was detected yet. Pass --database with --db-name, --db-user, and --db-host to include a dump, or --no-database for files only. A server copy is read on the first backup."
 	}
 	if db == nil {
 		return "No database was detected. Pass --database with --db-name, --db-user, and --db-host to include a dump, or --no-database for files only."
@@ -621,7 +757,7 @@ func databasePrompt(a *App, site model.Site) string {
 func remoteMissing(in SetupInput) []string {
 	kind, err := destination.ByID(in.Remote)
 	if err != nil {
-		return []string{"kind"}
+		return []string{"remote"}
 	}
 	return kind.SetupMissing(destination.SetupFields{
 		Host: in.Host, User: in.User, RemotePath: in.RemotePath,

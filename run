@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Developer entry point for local-backup.
+# Developer entry point for backupbinder.
 # Usage: ./run <command> [args...]
 set -euo pipefail
 
@@ -7,12 +7,12 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$ROOT"
 
 BIN_DIR="$ROOT/bin"
-BIN="$BIN_DIR/local-backup"
+BIN="$BIN_DIR/backupbinder"
 TOOLS_DIR="$ROOT/.tools"
 RESTIC="$TOOLS_DIR/restic"
-HOME_DIR="${LOCAL_BACKUP_HOME:-$ROOT/var}"
-RESTIC_VERSION="${LOCAL_BACKUP_RESTIC_VERSION:-0.19.0}"
-INSTALL_DIR="${LOCAL_BACKUP_INSTALL_DIR:-$HOME/.local/bin}"
+HOME_DIR="${BACKUPBINDER_HOME:-$ROOT/var}"
+RESTIC_VERSION="${BACKUPBINDER_RESTIC_VERSION:-0.19.0}"
+INSTALL_DIR="${BACKUPBINDER_INSTALL_DIR:-$HOME/.local/bin}"
 
 usage() {
 	cat <<'EOF'
@@ -21,7 +21,7 @@ Usage: ./run <command> [args...]
 Setup and build
   setup                 Create var/, download restic if needed, build the binary
   deps                  Download restic into .tools/ (force with --force)
-  build                 Build bin/local-backup
+  build                 Build bin/backupbinder
   clean                 Remove bin/ and Go test cache for this module
 
 Quality
@@ -38,15 +38,15 @@ Run the app
 
 Install / deploy
   deploy [dir]          Build, ensure restic, install binary to dir
-                        (default: $LOCAL_BACKUP_INSTALL_DIR or ~/.local/bin)
+                        (default: $BACKUPBINDER_INSTALL_DIR or ~/.local/bin)
   install [dir]         Alias for deploy
   mcp-config            Print a Cursor mcpServers snippet for this checkout
 
 Environment
-  LOCAL_BACKUP_HOME              Data directory (default: ./var)
-  LOCAL_BACKUP_RESTIC            Restic binary override
-  LOCAL_BACKUP_RESTIC_VERSION    Version fetched by deps (default: 0.19.0)
-  LOCAL_BACKUP_INSTALL_DIR       Default deploy target (default: ~/.local/bin)
+  BACKUPBINDER_HOME              Data directory (default: ./var)
+  BACKUPBINDER_RESTIC            Restic binary override
+  BACKUPBINDER_RESTIC_VERSION    Version fetched by deps (default: 0.19.0)
+  BACKUPBINDER_INSTALL_DIR       Default deploy target (default: ~/.local/bin)
 EOF
 }
 
@@ -89,7 +89,7 @@ ensure_restic() {
 	local force="${1:-}"
 	ensure_dirs
 	if [[ -x "$RESTIC" && "$force" != "--force" ]]; then
-		export LOCAL_BACKUP_RESTIC="$RESTIC"
+		export BACKUPBINDER_RESTIC="$RESTIC"
 		return
 	fi
 	need_cmd curl
@@ -111,7 +111,7 @@ ensure_restic() {
 	fi
 	chmod 755 "$tmp/restic"
 	mv "$tmp/restic" "$RESTIC"
-	export LOCAL_BACKUP_RESTIC="$RESTIC"
+	export BACKUPBINDER_RESTIC="$RESTIC"
 	"$RESTIC" version >&2
 }
 
@@ -139,7 +139,7 @@ build() {
 	ensure_dirs
 	ensure_restic
 	log "Building $BIN"
-	go build -o "$BIN" ./cmd/local-backup
+	go build -o "$BIN" ./cmd/backupbinder
 }
 
 cmd_setup() {
@@ -161,7 +161,7 @@ cmd_deps() {
 cmd_test() {
 	need_cmd go
 	ensure_restic
-	export LOCAL_BACKUP_RESTIC="$RESTIC"
+	export BACKUPBINDER_RESTIC="$RESTIC"
 	if [[ $# -eq 0 ]]; then
 		log "Running go test ./..."
 		go test ./...
@@ -179,7 +179,7 @@ cmd_fmt() {
 cmd_check() {
 	need_cmd go
 	ensure_restic
-	export LOCAL_BACKUP_RESTIC="$RESTIC"
+	export BACKUPBINDER_RESTIC="$RESTIC"
 	log "Checking gofmt"
 	local dirty
 	dirty="$(gofmt -l cmd internal)"
@@ -206,17 +206,17 @@ cmd_deploy() {
 	need_cmd go
 	build
 	mkdir -p "$dest"
-	local target="$dest/local-backup"
+	local target="$dest/backupbinder"
 	log "Installing $BIN -> $target"
 	install -m 755 "$BIN" "$target"
 	if [[ -x "$RESTIC" ]]; then
-		log "Restic stays at $RESTIC (set LOCAL_BACKUP_RESTIC if the installed binary cannot find it)"
+		log "Restic stays at $RESTIC (set BACKUPBINDER_RESTIC if the installed binary cannot find it)"
 	fi
 	cat >&2 <<EOF
 Installed.
   binary: $target
-  home:   export LOCAL_BACKUP_HOME=$HOME_DIR
-  restic: export LOCAL_BACKUP_RESTIC=$RESTIC
+  home:   export BACKUPBINDER_HOME=$HOME_DIR
+  restic: export BACKUPBINDER_RESTIC=$RESTIC
   ui:     $target --home $HOME_DIR serve
   mcp:    $target --home $HOME_DIR mcp
 EOF
@@ -227,7 +227,7 @@ cmd_mcp_config() {
 	cat <<EOF
 {
   "mcpServers": {
-    "local-backup": {
+    "backupbinder": {
       "command": "$BIN",
       "args": ["--home", "$HOME_DIR", "mcp"]
     }
@@ -238,7 +238,7 @@ EOF
 
 run_app() {
 	ensure_binary
-	export LOCAL_BACKUP_RESTIC="${LOCAL_BACKUP_RESTIC:-$RESTIC}"
+	export BACKUPBINDER_RESTIC="${BACKUPBINDER_RESTIC:-$RESTIC}"
 	exec "$BIN" --home "$HOME_DIR" "$@"
 }
 
@@ -266,7 +266,7 @@ main() {
 	run) run_app "$@" ;;
 	--) run_app "$@" ;;
 	*)
-		# Unknown verb: treat as a local-backup CLI command.
+		# Unknown verb: treat as a backupbinder CLI command.
 		run_app "$cmd" "$@"
 		;;
 	esac

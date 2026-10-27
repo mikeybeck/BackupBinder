@@ -10,11 +10,11 @@ import (
 	"strings"
 	"time"
 
-	"local-backup/internal/agent"
-	"local-backup/internal/app"
-	"local-backup/internal/fail"
-	"local-backup/internal/mcp"
-	"local-backup/internal/ui"
+	"backupbinder/internal/agent"
+	"backupbinder/internal/app"
+	"backupbinder/internal/fail"
+	"backupbinder/internal/mcp"
+	"backupbinder/internal/ui"
 )
 
 func main() {
@@ -49,8 +49,8 @@ func run(home, command string, args []string) int {
 		usage()
 		return 2
 	}
-	if command == "agent" {
-		return write(agent.CatalogDocument(), nil)
+	if command == "agent" || command == "doctor" {
+		return write(agent.Execute(nil, command, map[string]any{}))
 	}
 	if command == "discover_site" {
 		parsed, err := agent.Parse(command, args)

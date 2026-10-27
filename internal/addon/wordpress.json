@@ -61,7 +61,7 @@
       "fail_message": "wp db export failed.",
       "hint": "PHP could not export the database. mysqldump is the next attempt when the method is auto.",
       "missing": {
-        "{php}": {"message": "PHP is not available for wp-cli.", "hint": "Install PHP or set LOCAL_BACKUP_PHP."},
+        "{php}": {"message": "PHP is not available for wp-cli.", "hint": "Install PHP or set BACKUPBINDER_PHP."},
         "{wp}": {"message": "wp-cli is not installed.", "hint": "Install wp-cli or use mysqldump."}
       }
     },

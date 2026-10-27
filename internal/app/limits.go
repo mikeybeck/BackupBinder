@@ -4,8 +4,8 @@ import (
 	"strconv"
 	"strings"
 
-	"local-backup/internal/fail"
-	"local-backup/internal/model"
+	"backupbinder/internal/fail"
+	"backupbinder/internal/model"
 )
 
 // ParseKiB reads a KiB/s cap. An empty string is unset. Zero means unlimited.

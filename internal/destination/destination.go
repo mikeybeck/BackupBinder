@@ -14,8 +14,8 @@ import (
 	"strings"
 	"time"
 
-	"local-backup/internal/fail"
-	"local-backup/internal/model"
+	"backupbinder/internal/fail"
+	"backupbinder/internal/model"
 )
 
 //go:embed sftp.json
@@ -172,6 +172,54 @@ func IDs() string {
 		ids[i] = kind.ID
 	}
 	return strings.Join(ids, "|")
+}
+
+// AppliesTo describes which destination kinds use an agent flag.
+func AppliesTo(flag string) string {
+	kinds, err := Load()
+	if err != nil {
+		return ""
+	}
+	var ids []string
+	for _, kind := range kinds {
+		if flagApplies(kind, flag) {
+			ids = append(ids, kind.ID)
+		}
+	}
+	if len(ids) == 0 {
+		return ""
+	}
+	return "Applies when the destination kind is " + strings.Join(ids, ", ") + "."
+}
+
+func flagApplies(kind Kind, flag string) bool {
+	for _, field := range kind.Fields {
+		if field.Name == flag || field.Setup == flag {
+			return true
+		}
+	}
+	if kind.Credentials != nil && (flag == "access-key" || flag == "secret-key") {
+		return true
+	}
+	return false
+}
+
+// Unexpected reports fields the caller set that this kind does not declare.
+func (k Kind) Unexpected(dest model.Destination) error {
+	known := map[string]bool{}
+	for _, field := range k.Fields {
+		known[field.Name] = true
+	}
+	var extra []string
+	for _, name := range []string{"host", "user", "path", "bucket", "prefix", "endpoint"} {
+		if fieldValue(dest, name) != "" && !known[name] {
+			extra = append(extra, name)
+		}
+	}
+	if len(extra) == 0 {
+		return nil
+	}
+	return fail.New("bad_destination", "This destination does not use "+strings.Join(extra, ", ")+".")
 }
 
 // Validate checks required fields, field patterns, hooks, and required tools.
@@ -547,9 +595,9 @@ func firstRcloneLine(stderr string) string {
 	return fallback
 }
 
-// FindTool resolves a helper binary: LOCAL_BACKUP_<TOOL>, .tools/<tool>, then PATH.
+// FindTool resolves a helper binary: BACKUPBINDER_<TOOL>, .tools/<tool>, then PATH.
 func FindTool(name string) (string, error) {
-	envKey := "LOCAL_BACKUP_" + strings.ToUpper(name)
+	envKey := "BACKUPBINDER_" + strings.ToUpper(name)
 	if override := os.Getenv(envKey); override != "" {
 		if st, err := os.Stat(override); err == nil && !st.IsDir() {
 			return override, nil
@@ -567,7 +615,7 @@ func FindTool(name string) (string, error) {
 	}
 	hint := "Put " + name + " on PATH"
 	if name == "rclone" {
-		hint += ", or set LOCAL_BACKUP_RCLONE. This checkout can use .tools/rclone. Create a Google Drive remote with rclone config"
+		hint += ", or set BACKUPBINDER_RCLONE. This checkout can use .tools/rclone. Create a Google Drive remote with rclone config"
 	}
 	return "", fail.New("bad_destination", name+" is not installed. "+hint+".")
 }

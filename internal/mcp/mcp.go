@@ -9,8 +9,8 @@ import (
 	"io"
 	"strings"
 
-	"local-backup/internal/agent"
-	"local-backup/internal/fail"
+	"backupbinder/internal/agent"
+	"backupbinder/internal/fail"
 )
 
 // Call runs one tool. The map keys are flag names.
@@ -77,7 +77,7 @@ func handle(req request, call Call) (any, map[string]any) {
 		return map[string]any{
 			"protocolVersion": version,
 			"capabilities":    map[string]any{"tools": map[string]any{}},
-			"serverInfo":      map[string]any{"name": "local-backup", "version": "0.1.0"},
+			"serverInfo":      map[string]any{"name": "backupbinder", "version": "0.1.0"},
 			"instructions":    agent.CatalogDocument().Instructions,
 		}, nil
 	case "tools/list":
@@ -106,13 +106,18 @@ func handle(req request, call Call) (any, map[string]any) {
 
 func toolList() []map[string]any {
 	var tools []map[string]any
-	for _, cmd := range agent.Tools() {
+	for _, cmd := range agent.CatalogDocument().Commands {
+		if !cmd.Tool {
+			continue
+		}
 		props := map[string]any{}
 		var required []string
 		for _, f := range cmd.Flags {
 			schema := map[string]any{"type": "string", "description": f.Description}
 			if f.Bool {
 				schema["type"] = "boolean"
+			} else if strings.Contains(f.Placeholder, "|") {
+				schema["enum"] = strings.Split(f.Placeholder, "|")
 			}
 			props[f.Name] = schema
 			if f.Required {
