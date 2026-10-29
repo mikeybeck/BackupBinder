@@ -511,7 +511,7 @@ func exportMySQL(matched addon.Addon, spec addon.Dump, site model.Site, output, 
 		return model.DBCapture{}, secrets, err
 	}
 	// The defaults file is the command's stdin. A named file would survive SIGKILL.
-	cmd := exec.Command(bin, "--defaults-extra-file=/dev/stdin", "--single-transaction", "--skip-lock-tables", "--no-tablespaces", "--result-file="+output, conn.Name)
+	cmd := exec.Command(bin, "--defaults-file=/dev/stdin", "--single-transaction", "--skip-lock-tables", "--no-tablespaces", "--result-file="+output, conn.Name)
 	cmd.Stdin = strings.NewReader(mysqlDefaults(conn, password))
 	cmd.WaitDelay = 2 * time.Second
 	timeout := time.Duration(spec.TimeoutSec) * time.Second
@@ -538,7 +538,7 @@ func exportMySQL(matched addon.Addon, spec addon.Dump, site model.Site, output, 
 			Code:     "step_failed",
 			Message:  message,
 			Step:     "database_dump",
-			Command:  []string{bin, "--defaults-extra-file", "--single-transaction", "--no-tablespaces", conn.Name},
+			Command:  []string{bin, "--defaults-file", "--single-transaction", "--no-tablespaces", conn.Name},
 			ExitCode: fail.ExitCode(code),
 			Stderr:   text,
 			Hint:     spec.Hint,

@@ -164,7 +164,7 @@ func exportMySQLRemote(matched addon.Addon, spec addon.Dump, site model.Site, ou
 		}
 		return model.DBCapture{}, secrets, &fail.Error{
 			Code: "step_failed", Message: message, Step: "database_dump",
-			Command: []string{"ssh", site.Location.User + "@" + site.Location.Host, "mysqldump", "--defaults-extra-file", "--single-transaction", "--no-tablespaces", conn.Name},
+			Command: []string{"ssh", site.Location.User + "@" + site.Location.Host, "mysqldump", "--defaults-file", "--single-transaction", "--no-tablespaces", conn.Name},
 			Stderr:  clip(scrub(text, secrets)), Hint: remoteHint(site, spec.Hint),
 		}
 	}
@@ -189,7 +189,8 @@ func remoteMySQLCommand(cnf, sql, name string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return remoteMySQLPrefix(cnfQ) + "mysqldump --defaults-extra-file=" + cnfQ + " --single-transaction --skip-lock-tables --no-tablespaces --result-file=" + sqlQ + " " + nameQ + "; status=$?; rm -f " + cnfQ + "; exit $status", nil
+	// --defaults-file (not --defaults-extra-file) so ~/.my.cnf cannot override the dump user.
+	return remoteMySQLPrefix(cnfQ) + "mysqldump --defaults-file=" + cnfQ + " --single-transaction --skip-lock-tables --no-tablespaces --result-file=" + sqlQ + " " + nameQ + "; status=$?; rm -f " + cnfQ + "; exit $status", nil
 }
 
 // remoteMySQLStreamCommand writes the dump to stdout so SSH can stream it locally.
@@ -202,7 +203,7 @@ func remoteMySQLStreamCommand(cnf, name string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return remoteMySQLPrefix(cnfQ) + "mysqldump --defaults-extra-file=" + cnfQ + " --single-transaction --skip-lock-tables --no-tablespaces " + nameQ + "; status=$?; rm -f " + cnfQ + "; exit $status", nil
+	return remoteMySQLPrefix(cnfQ) + "mysqldump --defaults-file=" + cnfQ + " --single-transaction --skip-lock-tables --no-tablespaces " + nameQ + "; status=$?; rm -f " + cnfQ + "; exit $status", nil
 }
 
 // remoteMySQLPrefix writes the defaults file and removes it when the remote shell exits,

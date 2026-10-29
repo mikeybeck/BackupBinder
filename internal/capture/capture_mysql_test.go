@@ -51,7 +51,7 @@ printf '%s\n' 'CREATE TABLE t (a int);' 'INSERT INTO t VALUES (1);' > "$out"
 	if err != nil {
 		t.Fatal(err)
 	}
-	if strings.TrimSpace(string(arg)) != "--defaults-extra-file=/dev/stdin" {
+	if strings.TrimSpace(string(arg)) != "--defaults-file=/dev/stdin" {
 		t.Fatalf("arg %q", arg)
 	}
 	stdin, err := os.ReadFile(filepath.Join(record, "stdin"))

@@ -19,6 +19,9 @@ func TestRemoteMySQLCommandOmitsPassword(t *testing.T) {
 	if !strings.Contains(command, "mysqldump") || !strings.Contains(command, "'wpfoundry'") || !strings.Contains(command, "rm -f") {
 		t.Fatal(command)
 	}
+	if !strings.Contains(command, "--defaults-file=") || strings.Contains(command, "--defaults-extra-file=") {
+		t.Fatal(command)
+	}
 	if !strings.Contains(command, `trap "rm -f '/tmp/backupbinder-site-ab.cnf'" EXIT`) {
 		t.Fatal(command)
 	}
