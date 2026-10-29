@@ -53,6 +53,8 @@ Same backup contract for humans and agents (JSON CLI and MCP share one catalog).
 - Runnable localhost UI: `internal/ui/ui.go` (embedded HTML)
 - Shipped WordPress addon + fixture: `internal/addon/wordpress.json`, `fixtures/wordpress-site` (example only; not the product default)
 - Marketing: `site/` landing for BackupBinder — no testimonials, case studies, press, or logos on hand; do not fabricate them
+- Prior agent chats (project was named local-backup; Cursor may list them under “unknown location” after the rename) informed always-on rules under `.cursor/rules/` (`project-background`, `backup-quality-and-secrets`, `marketing-voice`) plus `agent-architecture`
+- License: GPL-3.0-or-later (`LICENSE`); public repo `github.com/mikeybeck/BackupBinder`
 
 ## Product Principles
 
